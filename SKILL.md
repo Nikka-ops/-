@@ -26,9 +26,13 @@ interview-experience (面经) content. You (the agent) do the reasoning; Python 
    image/PDF yourself with your vision capability. Produce a structured summary: skills,
    projects (with the techniques each project used), and notable keywords.
 
-2. **Seed query generation.** From the role direction + the resume's skills/topics, build
-   SEED queries from underlying skills/topics (agent, RAG, MCP, LLM 应用, …), NOT a guessed
-   role-name list. Use `references/role_taxonomy.md` only as a starting hint.
+2. **Seed query generation.** Reason — from your own domain knowledge — about the user's role
+   direction + resume to derive seed queries. This is domain-general: for ANY field (marketing,
+   quant, backend, design, …) you yourself know the adjacent role names and the underlying
+   skills/topics, so generate them on the fly. Do NOT rely on any preset word list. Seeds come
+   from two sources: (a) related role aliases the role direction implies, and (b) concrete
+   skills/projects/keywords pulled from the resume. Prefer underlying skill/topic terms over
+   role names — they are more stable and recall better across platforms.
 
 3. **Iterative retrieval (GitHub, V1).** Pick relevant interview repos and pass their raw
    markdown URLs to `GithubConnector(repo_raw_urls).search(seed_queries)`. Save the returned
