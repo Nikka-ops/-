@@ -18,6 +18,11 @@ def _union(into: list[str], extra: list[str]) -> None:
 
 
 def dedupe_and_rank(questions: list[Question]) -> list[Question]:
+    """Merge questions with the same normalized text and rank by frequency.
+
+    Contract: callers pass one Question per occurrence with freq=1; this sums
+    incoming freq, so passing pre-aggregated freqs will skew ranking.
+    """
     merged: dict[str, Question] = {}
     order: list[str] = []
     for q in questions:
