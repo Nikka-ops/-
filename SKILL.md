@@ -1,69 +1,44 @@
 ---
 name: interview-intelligence
-description: Use when a user wants to prepare for interviews by uploading a resume (PDF/image) and naming a fuzzy target role (e.g. "AI 应用开发"). Broad-net retrieves real interview questions from GitHub interview repos, dedupes/ranks them, and produces a personalized prep package with project-anchored follow-ups. V1 source is GitHub only.
+description: 面试准备 / interview prep。当用户上传简历(PDF/图片)并给出一个模糊的目标岗位方向(例如"AI 应用开发""市场实习")时使用。广撒网检索 GitHub 面经仓库里的真实面试题,去重排序,并结合用户简历生成带项目追问的个性化备考包。V1 仅支持 GitHub 源。
 ---
 
-# Interview Intelligence Skill
+# 面试情报 Skill(Interview Intelligence）
 
-Turn a resume + a fuzzy role into a personalized interview prep package grounded in real
-interview-experience (面经) content. You (the agent) do the reasoning; Python scripts under
-`scripts/` do the deterministic work. Communicate through JSON in `corpus_cache/`.
+把「简历 + 模糊岗位」变成一份**基于真实面经内容**的个性化备考包。你(agent)负责推理判断;`scripts/` 下的 Python 脚本负责确定性的脏活。两者通过 `corpus_cache/` 里的 JSON 文件交互。
 
-## Inputs
-- Resume: a PDF, image, or text file path.
-- Fuzzy role: a direction like "AI 应用开发" (NOT a specific JD).
+## 输入
+- 简历:PDF、图片或文本文件路径。
+- 模糊岗位:一个方向,例如"AI 应用开发"(**不是**具体的 JD)。
 
-## Tools (run with the package venv: `.venv/bin/python`)
+## 工具(用包内 venv 运行:`.venv/bin/python`)
 - `scripts/resume_extract.py` → `extract_resume(path) -> ResumeExtraction{text, needs_vision, asset_path}`
 - `scripts/connectors/github.py` → `GithubConnector(repo_raw_urls).search(queries) -> SearchResult`
-- `scripts/corpus/store.py` → `save_raw_posts/load_raw_posts/save_questions/load_questions`
+- `scripts/corpus/store.py` → `save_raw_posts / load_raw_posts / save_questions / load_questions`
 - `scripts/corpus/dedupe_rank.py` → `dedupe_and_rank(questions) -> list[Question]`
-- Data models in `scripts/models.py`; structures documented in `assets/schema.md`.
+- 数据模型在 `scripts/models.py`;结构说明见 `assets/schema.md`。
 
-## Workflow
+## 工作流
 
-1. **Resume understanding.** Call `extract_resume`. If `needs_vision` is true, read the
-   image/PDF yourself with your vision capability. Produce a structured summary: skills,
-   projects (with the techniques each project used), and notable keywords.
+1. **简历理解。** 调用 `extract_resume`。若 `needs_vision` 为真,就用你自己的视觉能力直接读这张图片/PDF。产出结构化摘要:技能、项目(每个项目用到的技术)、关键术语。
 
-2. **Seed query generation.** Reason — from your own domain knowledge — about the user's role
-   direction + resume to derive seed queries. This is domain-general: for ANY field (marketing,
-   quant, backend, design, …) you yourself know the adjacent role names and the underlying
-   skills/topics, so generate them on the fly. Do NOT rely on any preset word list. Seeds come
-   from two sources: (a) related role aliases the role direction implies, and (b) concrete
-   skills/projects/keywords pulled from the resume. Prefer underlying skill/topic terms over
-   role names — they are more stable and recall better across platforms.
+2. **种子查询生成。** 用你**自己的领域知识**,从「岗位方向 + 简历」推导出种子查询。这是领域无关的:无论什么领域(市场、量化、后端、设计……)你本来就知道相关的岗位别名和底层技能/话题,当场生成即可。**不要依赖任何预设词表。** 种子来自两处:(a) 岗位方向隐含的相关岗位别名;(b) 从简历里抽出的具体技能/项目/关键词。优先用底层技能/话题词,而不是岗位名——它们更稳定、召回更好。
 
-3. **Iterative retrieval (GitHub, V1).** Pick relevant interview repos and pass their raw
-   markdown URLs to `GithubConnector(repo_raw_urls).search(seed_queries)`. Save the returned
-   posts with `save_raw_posts`. Read the results and HARVEST the real role names / tags /
-   recurring terms that actually appear. Re-run with repos/terms the harvest surfaced. Repeat
-   until no new vocabulary emerges. If a connector returns `status="degraded"`, tell the user
-   what it needs and continue with what you have — never block the pipeline.
-   **Human-in-the-loop:** before the final pass, show the user the directions/terms you
-   discovered from real data and let them add/remove/steer.
+3. **迭代检索(V1 用 GitHub)。** 挑选相关的面经仓库,把它们的 raw markdown URL 传给 `GithubConnector(repo_raw_urls).search(seed_queries)`。用 `save_raw_posts` 把结果落盘。读取结果,**收割其中真实出现的岗位名 / 标签 / 高频术语**,再用收割到的词/仓库跑下一轮。重复直到不再冒出新词。若 connector 返回 `status="degraded"`,告诉用户它需要什么,然后用已有数据继续——**绝不阻塞整条管线**。
+   **Human-in-the-loop:** 在最后一轮之前,把你从真实数据里发现的方向/术语展示给用户,让他增删/纠偏。
 
-4. **Content-semantic relevance.** Decide each post's relevance by reading its content against
-   the user's role + resume — NOT by whether a role name matched a preset list.
+4. **内容级相关性判定。** 通过**读帖子内容**对照用户岗位 + 简历来判断每条是否相关——**不是**靠帖子的岗位名是否匹配某张预设表。
 
-5. **Question extraction.** Convert relevant RawPosts into normalized `Question`s (set
-   `modality_origin`). Save with `save_questions`.
+5. **题目抽取。** 把相关的 RawPost 转成标准化的 `Question`(设置 `modality_origin`)。用 `save_questions` 落盘。
 
-6. **Dedupe & rank.** Run `dedupe_and_rank(load_questions(...))` and save the ranked result.
-   This is the high-frequency question set.
+6. **去重 & 排序。** 跑 `dedupe_and_rank(load_questions(...))` 并保存排序结果。这就是高频题集。
 
-7. **Project-anchored reasoning.** For each top question, check whether it connects to a
-   resume project/skill. If yes, build a `FollowUpChain` (seed → personalized follow-ups,
-   `is_grounded=true`). Every follow-up MUST trace to (a resume project/skill) + (a real
-   scraped question) — if you cannot ground it, set `is_grounded=false` and keep it as a
-   plain 八股 question. Do NOT fabricate follow-ups.
+7. **项目锚定推理。** 对每道高频题,检查它能否挂到简历里的某个项目/技能上。能挂上就构造 `FollowUpChain`(种子题 → 个性化追问,`is_grounded=true`)。每个追问都**必须**能追溯到(简历某项目/技能)+(某条真实爬到的题);追溯不上就设 `is_grounded=false`,当普通八股题保留。**不要凭空编追问。**
 
-8. **Prep package.** Write a Markdown package: role analysis, gap analysis, high-frequency
-   八股 questions (with source links), personalized project follow-up chains, and reference
-   approaches. Save it to `corpus_cache/prep_package.md` and show it to the user.
+8. **备考包。** 写一份 Markdown 备考包:岗位分析、gap 分析、高频八股题(附来源链接)、个性化项目追问链、参考思路。保存到 `corpus_cache/prep_package.md` 并展示给用户。
 
-## Constraints
-- GitHub is the only source in V1 (牛客/小红书 + OCR come in later plans).
-- Third-party scrapers used in later versions (e.g. MediaCrawler) are for personal,
-  non-commercial use only.
-- Grounding over fluency: never invent follow-ups or questions not traceable to real data.
+## 约束
+- **所有面向用户的产出一律用中文**(备考包、题目、追问、分析)——面经源是中文。
+- V1 只有 GitHub 一个源(牛客/小红书 + OCR 在后续 plan)。
+- 后续版本用到的第三方爬虫(如 MediaCrawler)仅供个人、非商业用途。
+- **可追溯优先于流畅度**:绝不编造无法追溯到真实数据的题目或追问。
