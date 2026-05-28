@@ -1,3 +1,5 @@
+from datetime import date
+
 from scripts.models import Question
 from scripts.corpus.dedupe_rank import normalize, dedupe_and_rank
 
@@ -30,3 +32,35 @@ def test_rank_sorts_by_freq_desc():
     assert out[0].text == "common"
     assert out[0].freq == 2
     assert out[1].text == "rare"
+
+
+def test_merge_keeps_most_recent_date():
+    qs = [
+        Question("What is MCP?", ["u1"], latest_posted_at="2024-01-01"),
+        Question("what is  mcp", ["u2"], latest_posted_at="2025-06-01"),
+    ]
+    out = dedupe_and_rank(qs, today=date(2026, 5, 28))
+    assert len(out) == 1
+    assert out[0].latest_posted_at == "2025-06-01"
+    assert out[0].freq == 2
+
+
+def test_recency_weight_can_outrank_lower_freq_when_close():
+    # old item freq=2 → score 2*0.3=0.6 ; fresh item freq=1 → score 1*1.0=1.0
+    qs = [
+        Question("old hot", ["a"], freq=2, latest_posted_at="2023-01-01"),
+        Question("fresh", ["b"], freq=1, latest_posted_at="2026-04-01"),
+    ]
+    out = dedupe_and_rank(qs, today=date(2026, 5, 28))
+    assert out[0].text == "fresh"
+
+
+def test_none_date_weight_between_fresh_and_stale():
+    # freq all 1: fresh(1.0) > undated(0.5) > stale(0.3)
+    qs = [
+        Question("stale", ["a"], latest_posted_at="2022-01-01"),
+        Question("undated", ["b"], latest_posted_at=None),
+        Question("fresh", ["c"], latest_posted_at="2026-05-01"),
+    ]
+    out = dedupe_and_rank(qs, today=date(2026, 5, 28))
+    assert [q.text for q in out] == ["fresh", "undated", "stale"]
