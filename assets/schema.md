@@ -13,3 +13,11 @@
   `is_grounded=false` means it degraded to a plain 八股 question (no resume anchor found).
 
 Persistence: normalized JSON under `corpus_cache/` via `corpus/store.py`.
+
+## Image posts & OCR
+
+Image-based posts (小红书) use `post_type="image"`, carry image references in `asset_paths`, and
+usually have empty/short `raw_text` (caption only). Their questions are extracted by
+`ocr/extract.py` `extract_text_from_image(path, engine=None)`: a coarse OCR engine when one is
+wired and confident, otherwise `needs_vision=True` and the agent reads the image directly. The
+resulting `Question.modality_origin` is `"ocr"` or `"vision"` accordingly.
