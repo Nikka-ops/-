@@ -85,11 +85,24 @@ class NowCoderConnector(Connector):
                 f"fetch failed ({exc}); 牛客需要登录，请提供 cookie 或手动粘贴帖子链接/内容",
             )
 
-        if posts and all(not p.raw_text for p in posts):
+        empties = [p for p in posts if not p.raw_text]
+        if posts and len(empties) == len(posts):
             return SearchResult.degraded(
                 self.name,
                 "解析后的标题和正文都为空,NowCoder HTML 选择器可能已漂移;"
                 "请对照 scripts/connectors/nowcoder.py 顶部注释更新 selectors",
+            )
+
+        if posts and len(empties) / len(posts) >= 0.5:
+            good = [p for p in posts if p.raw_text]
+            return SearchResult(
+                posts=good,
+                status="degraded",
+                message=(
+                    f"[{self.name}] {len(empties)}/{len(posts)} 帖正文为空"
+                    "(疑似 anti-bot 间歇响应:createTime 在但正文 div 缺失);"
+                    f"仅保留 {len(good)} 帖成功内容,建议加 cookie 或稍后重试"
+                ),
             )
 
         return SearchResult(posts=posts, status="ok", message=f"{len(posts)} posts")

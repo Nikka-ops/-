@@ -61,6 +61,52 @@ def test_connector_degrades_when_parsed_content_is_empty():
     assert "selector" in result.message.lower()
 
 
+def test_connector_degrades_when_majority_bodies_empty_keeps_good_posts():
+    # Real-world case: NowCoder serves anti-bot pages where createTime stays in the
+    # JS blob but the editor content div is missing. Most posts come back empty;
+    # we should flag this loud (status=degraded) but keep whatever did parse.
+    good_html = (
+        "<div class='content-post-title'><h1>真实标题</h1></div>"
+        "<div class='nc-slate-editor-content'><p>真实正文</p></div>"
+        "<script>{\"createTime\":1758326400000}</script>"
+    )
+    empty_html = "<script>{\"createTime\":1758326400000}</script>"  # createTime survives, body gone
+
+    def fetch(url):
+        return good_html if url.endswith("/1") else empty_html
+
+    conn = NowCoderConnector(
+        post_urls=[f"https://nowcoder.com/p/{i}" for i in range(1, 5)],  # 1 good + 3 empty
+        fetcher=fetch,
+    )
+    result = conn.search([])
+    assert result.status == "degraded"
+    assert "anti-bot" in result.message.lower() or "重试" in result.message
+    assert len(result.posts) == 1
+    assert "真实正文" in result.posts[0].raw_text
+
+
+def test_connector_ok_when_minority_bodies_empty():
+    # 1 empty out of 4 (25%) — under the 50% threshold, treat as ok and keep all posts
+    good_html = (
+        "<div class='content-post-title'><h1>T</h1></div>"
+        "<div class='nc-slate-editor-content'><p>body</p></div>"
+        "<script>{\"createTime\":1758326400000}</script>"
+    )
+    empty_html = "<script>{\"createTime\":1758326400000}</script>"
+
+    def fetch(url):
+        return empty_html if url.endswith("/4") else good_html
+
+    conn = NowCoderConnector(
+        post_urls=[f"https://nowcoder.com/p/{i}" for i in range(1, 5)],
+        fetcher=fetch,
+    )
+    result = conn.search([])
+    assert result.status == "ok"
+    assert len(result.posts) == 4
+
+
 def test_parse_handles_only_title_or_only_content():
     title_only_html = "<div class='content-post-title'><h1>仅标题</h1></div>"
     conn = NowCoderConnector(
