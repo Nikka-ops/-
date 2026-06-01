@@ -26,11 +26,11 @@ def _max_date(a: str | None, b: str | None) -> str | None:
 
 def _recency_weight(posted_at: str | None, today: date) -> float:
     if not posted_at:
-        return 0.5
+        return 0.2
     try:
         d = datetime.strptime(posted_at, "%Y-%m-%d").date()
     except ValueError:
-        return 0.5
+        return 0.2
     days = (today - d).days
     if days <= 365:
         return 1.0

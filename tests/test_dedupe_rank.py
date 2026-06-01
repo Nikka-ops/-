@@ -55,12 +55,23 @@ def test_recency_weight_can_outrank_lower_freq_when_close():
     assert out[0].text == "fresh"
 
 
-def test_none_date_weight_between_fresh_and_stale():
-    # freq all 1: fresh(1.0) > undated(0.5) > stale(0.3)
+def test_undated_ranks_below_known_stale():
+    # New policy: undated (0.2) ranks BELOW known-stale (0.3).
+    # freq all 1: fresh(1.0) > stale(0.3) > undated(0.2)
     qs = [
         Question("stale", ["a"], latest_posted_at="2022-01-01"),
         Question("undated", ["b"], latest_posted_at=None),
         Question("fresh", ["c"], latest_posted_at="2026-05-01"),
     ]
     out = dedupe_and_rank(qs, today=date(2026, 5, 28))
-    assert [q.text for q in out] == ["fresh", "undated", "stale"]
+    assert [q.text for q in out] == ["fresh", "stale", "undated"]
+
+
+def test_malformed_date_treated_as_undated():
+    # Malformed posted_at should weight the same as None (0.2), i.e. rank below known-stale.
+    qs = [
+        Question("stale", ["a"], latest_posted_at="2022-01-01"),
+        Question("garbled", ["b"], latest_posted_at="not-a-date"),
+    ]
+    out = dedupe_and_rank(qs, today=date(2026, 5, 28))
+    assert [q.text for q in out] == ["stale", "garbled"]
