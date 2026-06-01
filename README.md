@@ -59,20 +59,41 @@ InterviewRadar 是一个 Claude Skill,把"你给的"变成"它给你的":
 
 **前置**:已安装 [Claude Code](https://claude.ai/code)(本项目是一个 Claude Skill)。
 
+### A. 一行安装(推荐,需要 npm)
+
 ```bash
-git clone https://github.com/KunChen1110/InterviewRadar.git
-cd InterviewRadar
+npx skills add https://github.com/KunChen1110/InterviewRadar -a claude-code
+```
+
+> `npx skills` 是 [vercel-labs/skills](https://github.com/vercel-labs/skills) 维护的社区工具,不是 Anthropic 官方包,但目前是 Skill 圈里事实标准的安装器。它会把 `SKILL.md` 软链到 `~/.claude/skills/interview-radar/`。
+
+### B. 手动安装(无 npm 或想看代码)
+
+```bash
+git clone https://github.com/KunChen1110/InterviewRadar.git ~/.claude/skills/interview-radar
+```
+
+### 装完之后(无论 A 还是 B)还得装 Python 依赖
+
+`npx skills` 只管 markdown,Python deps 要你自己装:
+
+```bash
+cd ~/.claude/skills/interview-radar
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-然后**在 Claude Code 里**对它说:
+### 调用
+
+在 Claude Code 里对它说:
 
 ```
-用 InterviewRadar 跑一下:
+用 interview-radar 跑一下:
 简历 /path/to/your-resume.pdf
 方向:AI 应用开发岗
 ```
+
+或者直接 `/interview-radar` 触发。
 
 Claude 会自动:
 1. 读简历(支持文字 PDF + 图片 + 扫描件)
