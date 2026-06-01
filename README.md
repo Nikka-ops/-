@@ -62,16 +62,21 @@ InterviewRadar 是一个 Claude Skill,把"你给的"变成"它给你的":
 ### A. 一行安装(推荐,需要 npm)
 
 ```bash
-npx skills add https://github.com/KunChen1110/InterviewRadar -a claude-code
+npx -y skills add https://github.com/KunChen1110/InterviewRadar -a claude-code -g
 ```
 
-> `npx skills` 是 [vercel-labs/skills](https://github.com/vercel-labs/skills) 维护的社区工具,不是 Anthropic 官方包,但目前是 Skill 圈里事实标准的安装器。它会把 `SKILL.md` 软链到 `~/.claude/skills/interview-radar/`。
+`-g` = 全局装到 `~/.claude/skills/interview-radar/`(所有项目都能用)。
+**不加 `-g`** 就是装到当前目录的 `.claude/skills/`(只该项目能用),按需选择。
+
+> `npx skills` 是 [vercel-labs/skills](https://github.com/vercel-labs/skills) 维护的社区工具,不是 Anthropic 官方包,但目前是 Skill 圈事实标准的安装器。
 
 ### B. 手动安装(无 npm 或想看代码)
 
 ```bash
 git clone https://github.com/KunChen1110/InterviewRadar.git ~/.claude/skills/interview-radar
 ```
+
+(项目级安装把目标路径换成 `<your-project>/.claude/skills/interview-radar` 即可。)
 
 ### 装完之后(无论 A 还是 B)还得装 Python 依赖
 
