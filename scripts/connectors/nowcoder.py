@@ -1,5 +1,19 @@
+"""NowCoder discuss-page connector.
+
+Current selector assumptions (verified 2026-06-01 against real HTML):
+- Title:   <div class="content-post-title"><h1>...</h1></div>
+- Content: <div class="nc-slate-editor-content"><p>...</p>...</div>
+- Date:    "createTime": <epoch_ms> in an embedded JS blob (NOT visible HTML).
+
+If parsing returns empty title AND empty content for every URL, the connector
+degrades with a "selector" message — NowCoder almost certainly updated their
+schema. Inspect the live HTML and update the three selectors above.
+"""
+from __future__ import annotations
+
 import re
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -7,30 +21,37 @@ from bs4 import BeautifulSoup
 from scripts.connectors.base import Connector, SearchResult
 from scripts.models import RawPost
 
-_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_CREATE_TIME = re.compile(r'"createTime"\s*:\s*(\d{10,13})')
+
+
+def _parse_create_time(html: str) -> str | None:
+    m = _CREATE_TIME.search(html)
+    if not m:
+        return None
+    try:
+        ts = int(m.group(1))
+        if ts > 10_000_000_000:
+            ts //= 1000
+        return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+    except (ValueError, OSError):
+        return None
 
 
 def parse_nowcoder_post(html: str, url: str) -> RawPost:
     soup = BeautifulSoup(html, "html.parser")
 
-    title_el = soup.select_one(".post-title")
+    title_el = soup.select_one("div.content-post-title h1")
     title = title_el.get_text(strip=True) if title_el else ""
 
-    date_el = soup.select_one(".post-date")
-    posted_at = None
-    if date_el:
-        m = _ISO_DATE.search(date_el.get_text(strip=True))
-        if m:
-            posted_at = m.group(0)
+    content_el = soup.select_one("div.nc-slate-editor-content")
+    body = content_el.get_text("\n", strip=True) if content_el else ""
 
-    content_el = soup.select_one(".post-content")
-    if content_el:
-        paras = [p.get_text(strip=True) for p in content_el.find_all("p")]
-        body = "\n".join(p for p in paras if p)
+    posted_at = _parse_create_time(html)
+
+    if title and body:
+        raw_text = f"{title}\n{body}"
     else:
-        body = ""
-
-    raw_text = (title + "\n" + body).strip() if title else body.strip()
+        raw_text = title or body
     return RawPost(
         source="nowcoder",
         url=url,
@@ -63,4 +84,12 @@ class NowCoderConnector(Connector):
                 self.name,
                 f"fetch failed ({exc}); 牛客需要登录，请提供 cookie 或手动粘贴帖子链接/内容",
             )
+
+        if posts and all(not p.raw_text for p in posts):
+            return SearchResult.degraded(
+                self.name,
+                "解析后的标题和正文都为空,NowCoder HTML 选择器可能已漂移;"
+                "请对照 scripts/connectors/nowcoder.py 顶部注释更新 selectors",
+            )
+
         return SearchResult(posts=posts, status="ok", message=f"{len(posts)} posts")
