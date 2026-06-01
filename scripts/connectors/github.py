@@ -22,7 +22,7 @@ def _is_question_like(text: str) -> bool:
 
 def _matches_any_hint(text: str, hints: Iterable[str]) -> bool:
     t = text.lower()
-    return any(h.lower() in t for h in hints)
+    return any(h.lower() in t for h in hints if h)
 
 
 def extract_posts_from_markdown(

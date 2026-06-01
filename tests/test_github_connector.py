@@ -89,3 +89,15 @@ def test_connector_passes_hints_through():
     texts = [p.raw_text for p in result.posts]
     assert any("agent" in t.lower() for t in texts)
     assert all("RAG" not in t for t in texts)
+
+
+def test_extract_with_empty_string_hint_does_not_match_all():
+    # Defensive: a stray empty-string hint must not turn into "match everything"
+    posts = extract_posts_from_markdown(
+        SAMPLE_MD,
+        "https://example.com/repo",
+        relevance_hints=["", "RAG"],
+    )
+    texts = [p.raw_text for p in posts]
+    assert "什么是 RAG？" in texts
+    assert "说明 MCP 和 Skill 的区别" not in texts
