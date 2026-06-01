@@ -57,48 +57,28 @@ InterviewRadar 是一个 Claude Skill,把"你给的"变成"它给你的":
 
 ## 快速开始
 
-**前置**:已安装 [Claude Code](https://claude.ai/code)(本项目是一个 Claude Skill)。
-
-### A. 一行安装(推荐,需要 npm)
+**前置**:已安装 [Claude Code](https://claude.ai/code)。
 
 ```bash
+# A. 一行安装(需 npm,-g = 全局)
 npx -y skills add https://github.com/KunChen1110/InterviewRadar -a claude-code -g
-```
 
-`-g` = 全局装到 `~/.claude/skills/interview-radar/`(所有项目都能用)。
-**不加 `-g`** 就是装到当前目录的 `.claude/skills/`(只该项目能用),按需选择。
-
-> `npx skills` 是 [vercel-labs/skills](https://github.com/vercel-labs/skills) 维护的社区工具,不是 Anthropic 官方包,但目前是 Skill 圈事实标准的安装器。
-
-### B. 手动安装(无 npm 或想看代码)
-
-```bash
+# 或 B. 手动 clone
 git clone https://github.com/KunChen1110/InterviewRadar.git ~/.claude/skills/interview-radar
-```
 
-(项目级安装把目标路径换成 `<your-project>/.claude/skills/interview-radar` 即可。)
-
-### 装完之后(无论 A 还是 B)还得装 Python 依赖
-
-`npx skills` 只管 markdown,Python deps 要你自己装:
-
-```bash
+# 装 Python 依赖
 cd ~/.claude/skills/interview-radar
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 调用
-
-在 Claude Code 里对它说:
+在 Claude Code 里调用:
 
 ```
 用 interview-radar 跑一下:
 简历 /path/to/your-resume.pdf
 方向:AI 应用开发岗
 ```
-
-或者直接 `/interview-radar` 触发。
 
 Claude 会自动:
 1. 读简历(支持文字 PDF + 图片 + 扫描件)
@@ -108,7 +88,16 @@ Claude 会自动:
 5. 项目锚定生成追问链
 6. 输出中文备考包到 `corpus_cache/prep_package.md`
 
-> 想接小红书源(很多笔记面经)?见 [`docs/setup/mediacrawler.md`](docs/setup/mediacrawler.md)。MediaCrawler 仅供个人非商用。
+### 数据源说明
+
+| 源 | 开箱可用 | 备注 |
+|---|---|---|
+| 牛客(NowCoder) | ✅ | 直接抓公开 discuss 页 |
+| GitHub | ✅ | 公开 raw markdown |
+| 知乎 / CSDN / 博客类 | ✅ | 通过 Claude 的 WebFetch |
+| 小红书(Xiaohongshu) | ❌ 需要额外装外部工具 | 反爬严,需用户自己装 [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) 并手动跑一次采集,本 skill 只读它的 JSON 导出。流程见 [`docs/setup/mediacrawler.md`](docs/setup/mediacrawler.md) |
+
+> 不接小红书也能跑,只是少一个高时效源。多数场景牛客 + GitHub + 博客类已经够用。
 
 ## 它怎么工作
 

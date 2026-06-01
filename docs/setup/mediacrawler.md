@@ -1,6 +1,6 @@
 # 小红书面经采集 — MediaCrawler 设置指引
 
-启用 `interview-intelligence` skill 的小红书源是**可选**步骤。skill 本身不抓数据;
+启用 `interview-radar` skill 的小红书源是**可选**步骤。skill 本身不抓数据;
 真正的采集由开源工具 [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) 完成,
 本文档教你怎么把它产出的 JSON 喂给本 skill。
 
@@ -43,7 +43,7 @@ cd MediaCrawler
 回到本仓库:
 
 ```bash
-cd /path/to/InterviewPrepare/interview-intelligence
+cd ~/.claude/skills/interview-radar
 .venv/bin/python -m scripts.scrape.normalize_xhs \
     /path/to/MediaCrawler/data/xhs/json/search_contents_*.json \
     -o corpus_cache/xhs_export.json
