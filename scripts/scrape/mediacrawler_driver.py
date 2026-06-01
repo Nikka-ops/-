@@ -1,15 +1,24 @@
 """Shell-out driver for MediaCrawler 小红书 search.
 
-Assumes:
-- MediaCrawler is cloned at $MEDIACRAWLER_HOME (env var) or ~/.mediacrawler/
-- User has run `python main.py --platform xhs --lt qrcode --type search ...`
-  at least once and scanned the QR code; login state is cached by
-  MediaCrawler at its own login_state location
-- MediaCrawler's xhs search writes notes JSON to
-  `<home>/data/xhs/json/search_contents_*.json`
+Verified against NanmiCoder/MediaCrawler @ 2026-06-01. Key facts driving
+the implementation:
 
-If MediaCrawler changes its CLI or output layout, only this file needs to be
-touched.
+- MediaCrawler CLI: `python main.py --platform xhs --lt qrcode --type search
+  --keywords "a,b,c" --save_data_option json`
+- Default `SAVE_DATA_OPTION` is `jsonl`; we override to `json` because our
+  `normalize_xhs.py` adapter consumes JSON arrays.
+- Output file (relative to MediaCrawler home):
+  `data/xhs/json/search_<item_type>_<YYYY-MM-DD>.json`. For our crawler type
+  (`search`) and item type (`contents`) the pattern is
+  `data/xhs/json/search_contents_*.json`.
+- MediaCrawler needs Playwright + ~30 deps; users typically install them
+  into a venv at `<home>/venv/`. We auto-detect that venv's python and use
+  it for the shell-out — system `python` won't have the deps.
+- Login state is cached by MediaCrawler itself (in its own dir) once the
+  user scans the QR code; subsequent runs reuse it until expiry.
+
+If MediaCrawler changes its CLI or output layout, only this file needs to
+be touched.
 """
 from __future__ import annotations
 
@@ -49,6 +58,22 @@ def _detect_home() -> Path:
     return Path.home() / ".mediacrawler"
 
 
+def _detect_python(home: Path) -> str:
+    """Find the python executable that has MediaCrawler's deps installed.
+
+    Priority:
+    1. `<home>/venv/bin/python` — the conventional path from MediaCrawler's
+       README pip-install instructions
+    2. `<home>/.venv/bin/python` — alternative venv name
+    3. system `python` — last-resort fallback (likely missing deps; we still
+       try so the error from MediaCrawler is surfaced to the user)
+    """
+    for candidate in (home / "venv" / "bin" / "python", home / ".venv" / "bin" / "python"):
+        if candidate.is_file():
+            return str(candidate)
+    return "python"
+
+
 class MediaCrawlerDriver:
     """Drives MediaCrawler from this skill. Login is the user's job; everything
     after login (scrape + locate output JSON) is automated by this driver."""
@@ -57,6 +82,7 @@ class MediaCrawlerDriver:
         self,
         home: Path | None = None,
         runner: Callable[[list[str], Path, int], _Result] | None = None,
+        python_executable: str | None = None,
     ):
         self.home = (home or _detect_home()).expanduser()
         if not self.home.is_dir():
@@ -66,6 +92,7 @@ class MediaCrawlerDriver:
                 "either set $MEDIACRAWLER_HOME or clone to ~/.mediacrawler/."
             )
         self.runner = runner or _default_runner
+        self.python_executable = python_executable or _detect_python(self.home)
 
     @property
     def output_dir(self) -> Path:
@@ -83,7 +110,7 @@ class MediaCrawlerDriver:
             raise ValueError("keywords must be non-empty")
 
         cmd = [
-            "python",
+            self.python_executable,
             str(self.home / "main.py"),
             "--platform",
             "xhs",
@@ -93,6 +120,10 @@ class MediaCrawlerDriver:
             "search",
             "--keywords",
             ",".join(keywords),
+            # Override MediaCrawler's default jsonl output so our adapter can
+            # consume the JSON array directly.
+            "--save_data_option",
+            "json",
         ]
 
         out_dir = self.output_dir

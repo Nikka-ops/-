@@ -103,6 +103,55 @@ def test_scrape_passes_keywords_as_comma_joined(tmp_path: Path):
     assert cmd[kw_idx + 1] == "Agent,RAG,LangChain"
 
 
+def test_scrape_forces_json_save_option(tmp_path: Path):
+    # MediaCrawler's default save_data_option is "jsonl"; the driver must
+    # override to "json" so our adapter (which reads a JSON array) works.
+    home = _make_fake_home(tmp_path)
+    out_dir = home / "data" / "xhs" / "json"
+
+    seen_cmd: list[list[str]] = []
+
+    def fake_runner(cmd, cwd, timeout):
+        seen_cmd.append(cmd)
+        (out_dir / "search_contents_test.json").write_text("[]")
+        return _Result(returncode=0)
+
+    driver = MediaCrawlerDriver(home=home, runner=fake_runner)
+    driver.scrape_xhs(["foo"])
+
+    cmd = seen_cmd[0]
+    flag_idx = cmd.index("--save_data_option")
+    assert cmd[flag_idx + 1] == "json"
+
+
+def test_python_executable_prefers_local_venv(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    venv_python = home / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("#!/bin/sh\nexit 0\n")
+    venv_python.chmod(0o755)
+
+    driver = MediaCrawlerDriver(home=home, runner=lambda *a, **k: _Result(0))
+    assert driver.python_executable == str(venv_python)
+
+
+def test_python_executable_falls_back_to_system(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    # No venv created
+    driver = MediaCrawlerDriver(home=home, runner=lambda *a, **k: _Result(0))
+    assert driver.python_executable == "python"
+
+
+def test_python_executable_can_be_overridden(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    driver = MediaCrawlerDriver(
+        home=home,
+        runner=lambda *a, **k: _Result(0),
+        python_executable="/custom/python",
+    )
+    assert driver.python_executable == "/custom/python"
+
+
 def test_scrape_requires_nonempty_keywords(tmp_path: Path):
     home = _make_fake_home(tmp_path)
     driver = MediaCrawlerDriver(home=home, runner=lambda *a, **k: _Result(0))
