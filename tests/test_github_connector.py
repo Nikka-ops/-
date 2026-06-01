@@ -46,3 +46,46 @@ def test_connector_degrades_on_fetch_error():
     result = conn.search(["agent"])
     assert result.status == "degraded"
     assert result.posts == []
+
+
+def test_extract_with_hints_keeps_only_matching():
+    posts = extract_posts_from_markdown(
+        SAMPLE_MD,
+        "https://example.com/repo",
+        relevance_hints=["RAG"],
+    )
+    texts = [p.raw_text for p in posts]
+    assert "什么是 RAG？" in texts
+    assert "说明 MCP 和 Skill 的区别" not in texts
+    assert "介绍一下你的 agent 项目架构" not in texts
+
+
+def test_extract_with_hints_case_insensitive():
+    posts = extract_posts_from_markdown(
+        SAMPLE_MD,
+        "https://example.com/repo",
+        relevance_hints=["mcp"],  # lowercase, candidate has uppercase MCP
+    )
+    texts = [p.raw_text for p in posts]
+    assert any("MCP" in t for t in texts)
+    assert all("RAG" not in t for t in texts)
+
+
+def test_extract_with_empty_hints_does_not_filter():
+    posts_none = extract_posts_from_markdown(SAMPLE_MD, "https://example.com/repo", relevance_hints=None)
+    posts_empty = extract_posts_from_markdown(SAMPLE_MD, "https://example.com/repo", relevance_hints=[])
+    assert {p.raw_text for p in posts_none} == {p.raw_text for p in posts_empty}
+    assert len(posts_empty) >= 3  # all question-like lines
+
+
+def test_connector_passes_hints_through():
+    conn = GithubConnector(
+        repo_raw_urls=["https://example.com/repo"],
+        fetcher=lambda url: SAMPLE_MD,
+        relevance_hints=["agent"],
+    )
+    result = conn.search([])
+    assert result.status == "ok"
+    texts = [p.raw_text for p in result.posts]
+    assert any("agent" in t.lower() for t in texts)
+    assert all("RAG" not in t for t in texts)
