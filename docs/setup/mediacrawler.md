@@ -2,70 +2,67 @@
 
 启用 `interview-radar` skill 的小红书源是**可选**步骤。skill 本身不抓数据;
 真正的采集由开源工具 [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) 完成,
-本文档教你怎么把它产出的 JSON 喂给本 skill。
+本文档教你怎么把它和本 skill 串起来。
 
 > 仅供个人、非商业用途。请遵守目标平台的服务条款。
 
-## 1. 前提
+## 推荐:driver 模式(一次设置,之后全自动)
 
-- Python 3.11+、Git、一个可登录小红书的微信/手机号
-- 一个普通浏览器(扫码登录用)
+只需要做**两件事**(总共约 5 分钟):
 
-## 2. 装 MediaCrawler(放在本仓库**外面**)
+### 1. 装 MediaCrawler 到默认路径
 
 ```bash
-cd ~/Code   # 或任意你存放第三方仓库的位置
-git clone https://github.com/NanmiCoder/MediaCrawler.git
-cd MediaCrawler
-# 按它 README 的步骤装依赖(它通常用 uv 或 pip + requirements.txt)
+# 默认路径是 ~/.mediacrawler/。也可以装到任意位置,然后 export MEDIACRAWLER_HOME=<path>
+git clone https://github.com/NanmiCoder/MediaCrawler.git ~/.mediacrawler
+cd ~/.mediacrawler
+# 按它 README 装依赖(一般是 pip install -r requirements.txt 或 uv sync)
 ```
 
-> 不要把 MediaCrawler clone 到本仓库里。它有自己的依赖、许可证、更新节奏,
-> 解耦更好维护。
-
-## 3. 登录小红书
-
-按 MediaCrawler README 的「登录方式」一节操作(QR 扫码 / Cookie 注入二选一)。
-登录态保存在它自己的目录里。
-
-## 4. 用关键词搜面经
-
-在 MediaCrawler 仓库里运行它的搜索命令,目标平台选 `xhs`,关键词建议:
-
-- 你的目标岗位别名(例如「AI 应用开发 面经」「Agent 工程师 面试」「大模型应用 实习」)
-- 公司 + 岗位组合(例如「字节 AI 实习 面经」)
-
-具体命令格式以 MediaCrawler 当前版本 README 为准。跑完后输出文件通常在
-`MediaCrawler/data/xhs/json/` 之类的位置,文件名形如 `search_contents_2026-xx-xx.json`。
-
-## 5. 归一化
-
-回到本仓库:
+### 2. 扫码登录一次
 
 ```bash
+cd ~/.mediacrawler
+python main.py --platform xhs --lt qrcode --type search --keywords "测试"
+```
+
+屏幕上会弹出二维码,用手机小红书 App 扫码登录。**之后登录态会被 MediaCrawler 缓存**,在过期之前都不需要再扫。
+
+之后就别再手动跑 MediaCrawler 了 ——
+
+**skill 会在需要小红书数据时自动调用它**(通过 `XiaohongshuConnector(driver=MediaCrawlerDriver())`),把关键词喂进去 → 拿 JSON → 进管道,全自动。
+
+### 登录态过期了怎么办?
+
+skill 会返回 `status="degraded"` 并提示"登录过期"。重新执行第 2 步扫码即可,代码不用动。
+
+---
+
+## 备用:手动模式(不想让 skill 自动跑 MediaCrawler)
+
+如果你想自己控制爬虫节奏,或者觉得让 skill shell out 跑外部工具不放心:
+
+```bash
+# 自己跑 MediaCrawler
+cd ~/.mediacrawler
+python main.py --platform xhs --lt qrcode --type search --keywords "AI 应用开发 面经"
+
+# 用本 skill 的适配器归一化
 cd ~/.claude/skills/interview-radar
 .venv/bin/python -m scripts.scrape.normalize_xhs \
-    /path/to/MediaCrawler/data/xhs/json/search_contents_*.json \
+    ~/.mediacrawler/data/xhs/json/search_contents_*.json \
     -o corpus_cache/xhs_export.json
 ```
 
-成功会打印 `wrote N notes to corpus_cache/xhs_export.json`。
+然后让 skill 用 `XiaohongshuConnector(export_path="corpus_cache/xhs_export.json")`,不传 driver。
 
-如果适配器报错,**多半是 MediaCrawler 升级了输出 schema**。
-检查 `scripts/scrape/normalize_xhs.py` 顶部的字段假设注释,对照真实 JSON 修字段名,
-跑测试 `pytest tests/test_normalize_xhs.py` 验证,再用真实文件重跑。
+---
 
-## 6. 喂给 skill
+## 排错
 
-在 skill 的工作流里,给 `XiaohongshuConnector` 传刚才的输出路径:
-
-```python
-XiaohongshuConnector(export_path="corpus_cache/xhs_export.json")
-```
-
-剩下的(时效过滤、OCR、去重、项目锚定)skill 会自己处理。
-
-## 7. 复跑
-
-数据陈旧时直接重跑步骤 4–5。Plan 2 的时效过滤会把超过两年的笔记从结果里剔掉,
-所以你不用手动清理旧数据。
+| 现象 | 可能原因 |
+|---|---|
+| `MediaCrawlerNotInstalledError` | 没装在 `~/.mediacrawler/`,且没设 `$MEDIACRAWLER_HOME` |
+| `MediaCrawlerScrapeError: login expired` | 登录态过期,**重扫码**(第 2 步) |
+| `MediaCrawlerScrapeError: ... schema may have changed` | MediaCrawler 升级了 CLI 或输出路径,改 `scripts/scrape/mediacrawler_driver.py` 里的假设 |
+| 适配器(`normalize_xhs.py`)报错 | MediaCrawler 升级了 JSON schema,改 `scripts/scrape/normalize_xhs.py` 里的字段假设 |

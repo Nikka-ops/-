@@ -101,14 +101,21 @@ Claude 会自动:
 <details>
 <summary><b>(进阶,可选)接入小红书源</b></summary>
 
-小红书面经笔记很多,但平台反爬严,**没法直接抓**。如果想接入:
+小红书面经笔记很多,但平台反爬严,**不能直接抓**——需要一次性配置 MediaCrawler。配完之后 skill 全自动调用,**不用每次手动跑**。
 
-1. 自己装 [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)(它是一个开源浏览器爬虫工具)
-2. 用 MediaCrawler 扫码登录小红书(**必须一次手动扫码**,这步无法自动化)
-3. 用 MediaCrawler 跑一次关键词采集,产出一份 JSON
-4. 用本 skill 自带的适配器把 JSON 喂进来
+```bash
+# 一、装 MediaCrawler(默认路径 ~/.mediacrawler)
+git clone https://github.com/NanmiCoder/MediaCrawler.git ~/.mediacrawler
+cd ~/.mediacrawler && pip install -r requirements.txt
 
-详细流程见 [`docs/setup/mediacrawler.md`](docs/setup/mediacrawler.md)。MediaCrawler 仅供个人非商用。
+# 二、扫码登录一次
+python main.py --platform xhs --lt qrcode --type search --keywords "测试"
+# 用手机小红书 App 扫弹出的二维码,之后登录态被缓存
+```
+
+完事。skill 接下来要小红书数据时会自动 shell out 调 MediaCrawler。登录过期前不用再管。
+
+详见 [`docs/setup/mediacrawler.md`](docs/setup/mediacrawler.md)。MediaCrawler 仅供个人非商用。
 
 </details>
 
