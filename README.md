@@ -108,9 +108,11 @@ Claude 会自动:
 git clone https://github.com/NanmiCoder/MediaCrawler.git ~/.mediacrawler
 cd ~/.mediacrawler && pip install -r requirements.txt
 
-# 二、扫码登录一次
-python main.py --platform xhs --lt qrcode --type search --keywords "测试"
-# 用手机小红书 App 扫弹出的二维码,之后登录态被缓存
+# 二、登录一次
+# 推荐:从正常浏览器复制 web_session cookie 到 ~/.mediacrawler/config/base_config.py:
+# LOGIN_TYPE = "cookie"
+# COOKIES = "web_session=<你的值>"
+venv/bin/python main.py --platform xhs --lt cookie --type search --keywords "测试" --save_data_option json --get_comment no
 ```
 
 完事。skill 接下来要小红书数据时会自动 shell out 调 MediaCrawler。登录过期前不用再管。

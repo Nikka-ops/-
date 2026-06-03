@@ -33,11 +33,58 @@ sed -i '' 's/^ENABLE_CDP_MODE = True/ENABLE_CDP_MODE = False/' config/base_confi
 
 (macOS sed 语法;Linux 用 `sed -i 's/.../.../' config/base_config.py`。)
 
-### 2. 扫码登录一次
+### 2. 登录小红书
+
+优先用 Cookie 登录。二维码登录现在更容易被小红书风控挡住;Cookie 登录用你正常浏览器里已经登录的小红书会话,成功率更高。
+
+#### 方式 A: Cookie 登录(推荐)
+
+1. 用你平时的 Chrome / Safari / Edge 打开 `https://www.xiaohongshu.com`,正常用手机扫码登录。
+2. 登录成功后打开开发者工具:
+   - Chrome / Edge: `F12` 或 `Option + Command + I`
+   - Safari:先在设置里打开“开发”菜单,再进入 Web Inspector
+3. 进入 `Application` / `Storage` 面板。
+4. 左侧选择 `Cookies` -> `https://www.xiaohongshu.com`。
+5. 找到名字为 `web_session` 的 cookie,复制它的 `Value`。
+6. 写入 MediaCrawler 配置:
 
 ```bash
 cd ~/.mediacrawler
-python main.py --platform xhs --lt qrcode --type search --keywords "测试"
+python3 - <<'PY'
+from pathlib import Path
+
+cookie = input("paste web_session: ").strip()
+path = Path("config/base_config.py")
+text = path.read_text(encoding="utf-8")
+lines = []
+for line in text.splitlines():
+    if line.startswith("LOGIN_TYPE ="):
+        lines.append('LOGIN_TYPE = "cookie"  # qrcode or phone or cookie')
+    elif line.startswith("COOKIES ="):
+        lines.append(f'COOKIES = "web_session={cookie}"')
+    elif line.startswith("ENABLE_GET_COMMENTS ="):
+        lines.append("ENABLE_GET_COMMENTS = False")
+    else:
+        lines.append(line)
+text = "\n".join(lines) + "\n"
+path.write_text(text, encoding="utf-8")
+PY
+```
+
+然后跑一次验证:
+
+```bash
+cd ~/.mediacrawler
+venv/bin/python main.py --platform xhs --lt cookie --type search --keywords "AI 应用开发 面经" --save_data_option json --get_comment no
+```
+
+如果成功,会在 `~/.mediacrawler/data/xhs/json/` 下生成 `search_contents_*.json`。
+
+#### 方式 B: 二维码登录(备选)
+
+```bash
+cd ~/.mediacrawler
+venv/bin/python main.py --platform xhs --lt qrcode --type search --keywords "测试" --save_data_option json --get_comment no
 ```
 
 屏幕上会弹出二维码,用手机小红书 App 扫码登录。**之后登录态会被 MediaCrawler 缓存**,在过期之前都不需要再扫。
@@ -59,7 +106,7 @@ skill 会返回 `status="degraded"` 并提示"登录过期"。重新执行第 2 
 ```bash
 # 自己跑 MediaCrawler
 cd ~/.mediacrawler
-python main.py --platform xhs --lt qrcode --type search --keywords "AI 应用开发 面经"
+venv/bin/python main.py --platform xhs --lt cookie --type search --keywords "AI 应用开发 面经" --save_data_option json --get_comment no
 
 # 用本 skill 的适配器归一化
 cd ~/.claude/skills/interview-radar
@@ -77,6 +124,6 @@ cd ~/.claude/skills/interview-radar
 | 现象 | 可能原因 |
 |---|---|
 | `MediaCrawlerNotInstalledError` | 没装在 `~/.mediacrawler/`,且没设 `$MEDIACRAWLER_HOME` |
-| `MediaCrawlerScrapeError: login expired` | 登录态过期,**重扫码**(第 2 步) |
+| `MediaCrawlerScrapeError: login expired` | 登录态过期。Cookie 模式重新复制 `web_session`;二维码模式重扫码 |
 | `MediaCrawlerScrapeError: ... schema may have changed` | MediaCrawler 升级了 CLI 或输出路径,改 `scripts/scrape/mediacrawler_driver.py` 里的假设 |
 | 适配器(`normalize_xhs.py`)报错 | MediaCrawler 升级了 JSON schema,改 `scripts/scrape/normalize_xhs.py` 里的字段假设 |

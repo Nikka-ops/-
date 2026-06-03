@@ -46,7 +46,14 @@ class _Result:
 
 def _default_runner(cmd: list[str], cwd: Path, timeout: int) -> _Result:
     proc = subprocess.run(
-        cmd, cwd=str(cwd), timeout=timeout, capture_output=True, text=True, check=False
+        cmd,
+        cwd=str(cwd),
+        timeout=timeout,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     return _Result(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 
@@ -98,16 +105,32 @@ class MediaCrawlerDriver:
     def output_dir(self) -> Path:
         return self.home / "data" / "xhs" / "json"
 
-    def scrape_xhs(self, keywords: list[str], timeout: int = 600) -> Path:
+    def scrape_xhs(
+        self,
+        keywords: list[str],
+        timeout: int = 600,
+        login_type: str = "qrcode",
+    ) -> Path:
         """Run MediaCrawler xhs search and return the path to the freshly-produced
         notes JSON.
 
+        login_type:
+        - "qrcode" (default): expects MediaCrawler to display a QR code, user
+          must have valid cached login state from a prior scan, OR be willing
+          to scan now. Currently unreliable due to Xiaohongshu anti-bot.
+        - "cookie": MediaCrawler reads `config.COOKIES` (set to
+          "web_session=<value>") and injects it into the browser context.
+          More reliable but requires user to extract cookie from a normal
+          logged-in browser session.
+        - "phone": SMS verification (not supported by this driver).
+
         Raises MediaCrawlerScrapeError on non-zero exit, missing output, or any
-        other observable failure. Login expiry typically shows up as a non-zero
-        exit; surface the message so the user knows to re-scan the QR code.
+        other observable failure.
         """
         if not keywords:
             raise ValueError("keywords must be non-empty")
+        if login_type not in ("qrcode", "cookie", "phone"):
+            raise ValueError(f"unsupported login_type: {login_type}")
 
         cmd = [
             self.python_executable,
@@ -115,7 +138,7 @@ class MediaCrawlerDriver:
             "--platform",
             "xhs",
             "--lt",
-            "qrcode",
+            login_type,
             "--type",
             "search",
             "--keywords",
@@ -124,10 +147,18 @@ class MediaCrawlerDriver:
             # consume the JSON array directly.
             "--save_data_option",
             "json",
+            # InterviewRadar consumes notes, not comments. Disabling comments
+            # keeps runs small and reduces unnecessary platform requests.
+            "--get_comment",
+            "no",
         ]
 
         out_dir = self.output_dir
-        existing = set(out_dir.glob("search_contents_*.json")) if out_dir.is_dir() else set()
+        before_mtimes = (
+            {p: p.stat().st_mtime_ns for p in out_dir.glob("search_contents_*.json")}
+            if out_dir.is_dir()
+            else {}
+        )
 
         try:
             result = self.runner(cmd, self.home, timeout)
@@ -152,8 +183,12 @@ class MediaCrawlerDriver:
             )
 
         candidates = sorted(
-            (p for p in out_dir.glob("search_contents_*.json") if p not in existing),
-            key=lambda p: p.stat().st_mtime,
+            (
+                p
+                for p in out_dir.glob("search_contents_*.json")
+                if p not in before_mtimes or p.stat().st_mtime_ns > before_mtimes[p]
+            ),
+            key=lambda p: p.stat().st_mtime_ns,
             reverse=True,
         )
         if not candidates:

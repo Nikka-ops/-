@@ -54,6 +54,7 @@ class XiaohongshuConnector(Connector):
         export_path: str | None = None,
         driver: MediaCrawlerDriver | None = None,
         loader: Callable[[str], str] | None = None,
+        login_type: str = "qrcode",
     ):
         if export_path is None and driver is None:
             raise ValueError(
@@ -63,6 +64,7 @@ class XiaohongshuConnector(Connector):
         self.export_path = export_path
         self.driver = driver
         self.loader = loader or _default_loader
+        self.login_type = login_type
 
     def search(self, queries: list[str]) -> SearchResult:
         try:
@@ -72,7 +74,7 @@ class XiaohongshuConnector(Connector):
                         self.name,
                         "需要关键词才能用 MediaCrawler 驱动模式;请传入 queries",
                     )
-                notes_path = self.driver.scrape_xhs(queries)
+                notes_path = self.driver.scrape_xhs(queries, login_type=self.login_type)
                 native = json.loads(Path(notes_path).read_text(encoding="utf-8"))
                 posts = _posts_from_notes(normalize(native))
             else:
@@ -80,7 +82,8 @@ class XiaohongshuConnector(Connector):
         except Exception as exc:  # noqa: BLE001 - degrade, never crash the pipeline
             return SearchResult.degraded(
                 self.name,
-                f"无法获取小红书数据 ({exc});若用 driver 模式请检查 MediaCrawler 登录态是否过期(重扫码),"
+                f"无法获取小红书数据 ({exc});若用 driver 模式请检查 MediaCrawler 登录态是否过期"
+                "(qrcode 模式重扫码,cookie 模式重新拿 web_session 填进 config.COOKIES),"
                 "或确认 MediaCrawler 是否安装在 $MEDIACRAWLER_HOME / ~/.mediacrawler/",
             )
         return SearchResult(posts=posts, status="ok", message=f"{len(posts)} posts")

@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from scripts.scrape.mediacrawler_driver import (
     MediaCrawlerNotInstalledError,
     MediaCrawlerScrapeError,
     _Result,
+    _default_runner,
     _detect_home,
 )
 
@@ -36,6 +38,22 @@ def test_detect_home_defaults_to_dot_mediacrawler(monkeypatch):
     assert _detect_home() == Path.home() / ".mediacrawler"
 
 
+def test_default_runner_replaces_invalid_output_bytes(tmp_path: Path):
+    result = _default_runner(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stderr.buffer.write(b'bad\\xfftail')",
+        ],
+        tmp_path,
+        5,
+    )
+
+    assert result.returncode == 0
+    assert "bad" in result.stderr
+    assert "tail" in result.stderr
+
+
 def test_scrape_returns_newest_new_file(tmp_path: Path):
     home = _make_fake_home(tmp_path)
     out_dir = home / "data" / "xhs" / "json"
@@ -57,6 +75,26 @@ def test_scrape_returns_newest_new_file(tmp_path: Path):
 
     assert result.name == "search_contents_2026-06-01.json"
     assert result != old
+
+
+def test_scrape_returns_existing_file_updated_by_mediacrawler(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    out_dir = home / "data" / "xhs" / "json"
+    output = out_dir / "search_contents_2026-06-03.json"
+    output.write_text("[]")
+    old_mtime = time.time() - 100
+    os.utime(output, (old_mtime, old_mtime))
+
+    def fake_runner(cmd, cwd, timeout):
+        output.write_text('[{"note_id": "fresh"}]')
+        new_mtime = time.time() + 10
+        os.utime(output, (new_mtime, new_mtime))
+        return _Result(returncode=0)
+
+    driver = MediaCrawlerDriver(home=home, runner=fake_runner)
+    result = driver.scrape_xhs(["AI 应用开发"])
+
+    assert result == output
 
 
 def test_scrape_raises_on_nonzero_exit(tmp_path: Path):
@@ -124,6 +162,25 @@ def test_scrape_forces_json_save_option(tmp_path: Path):
     assert cmd[flag_idx + 1] == "json"
 
 
+def test_scrape_disables_comment_crawling(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    out_dir = home / "data" / "xhs" / "json"
+
+    seen_cmd: list[list[str]] = []
+
+    def fake_runner(cmd, cwd, timeout):
+        seen_cmd.append(cmd)
+        (out_dir / "search_contents_test.json").write_text("[]")
+        return _Result(returncode=0)
+
+    driver = MediaCrawlerDriver(home=home, runner=fake_runner)
+    driver.scrape_xhs(["foo"])
+
+    cmd = seen_cmd[0]
+    flag_idx = cmd.index("--get_comment")
+    assert cmd[flag_idx + 1] == "no"
+
+
 def test_python_executable_prefers_local_venv(tmp_path: Path):
     home = _make_fake_home(tmp_path)
     venv_python = home / "venv" / "bin" / "python"
@@ -157,3 +214,48 @@ def test_scrape_requires_nonempty_keywords(tmp_path: Path):
     driver = MediaCrawlerDriver(home=home, runner=lambda *a, **k: _Result(0))
     with pytest.raises(ValueError):
         driver.scrape_xhs([])
+
+
+def test_scrape_login_type_defaults_to_qrcode(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    out_dir = home / "data" / "xhs" / "json"
+
+    seen: list[list[str]] = []
+
+    def fake_runner(cmd, cwd, timeout):
+        seen.append(cmd)
+        (out_dir / "search_contents_x.json").write_text("[]")
+        return _Result(returncode=0)
+
+    driver = MediaCrawlerDriver(home=home, runner=fake_runner)
+    driver.scrape_xhs(["foo"])
+
+    cmd = seen[0]
+    lt_idx = cmd.index("--lt")
+    assert cmd[lt_idx + 1] == "qrcode"
+
+
+def test_scrape_login_type_cookie_passes_through(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    out_dir = home / "data" / "xhs" / "json"
+
+    seen: list[list[str]] = []
+
+    def fake_runner(cmd, cwd, timeout):
+        seen.append(cmd)
+        (out_dir / "search_contents_x.json").write_text("[]")
+        return _Result(returncode=0)
+
+    driver = MediaCrawlerDriver(home=home, runner=fake_runner)
+    driver.scrape_xhs(["foo"], login_type="cookie")
+
+    cmd = seen[0]
+    lt_idx = cmd.index("--lt")
+    assert cmd[lt_idx + 1] == "cookie"
+
+
+def test_scrape_rejects_unknown_login_type(tmp_path: Path):
+    home = _make_fake_home(tmp_path)
+    driver = MediaCrawlerDriver(home=home, runner=lambda *a, **k: _Result(0))
+    with pytest.raises(ValueError):
+        driver.scrape_xhs(["foo"], login_type="biometric")
