@@ -219,11 +219,14 @@ InterviewRadar/
 
 ## Roadmap
 
-- [ ] **Plan 7**:文本 → 题目自动抽取(目前 agent 端读 raw_text 合成,缺一个 `extract_questions()` 函数把 `dedupe_and_rank` 接进真实管道)
-- [ ] **Plan 8**:端到端集成测试 + GitHub Actions CI
-- [ ] 持久化:跨 session 累积高频术语词典
-- [ ] 抖音视频源(若发现高密度文本转录)
-- [ ] 评测体系:Golden Set + Trace 回放
+- [x] **小红书 live 采集**:MediaCrawler cookie driver 已接入,支持按关键词自动抓取小红书 notes JSON,并进入 `XiaohongshuConnector`。
+- [x] **小红书基础适配**:MediaCrawler 原生 JSON 已能 normalize 成 `RawPost`,支持标题、正文、时间戳、图片 URL。
+- [ ] **Plan 7:小红书图片面经补全**:很多小红书面经受字数限制,完整内容在图片里。下一步需要下载 `image_list` 到 `corpus_cache/assets/xhs/`,接入真实 OCR 引擎,把 OCR 文本合并回 `RawPost.raw_text`,并保留低置信度 vision fallback。
+- [ ] **Plan 8:`extract_questions()` 自动抽题**:从 text/OCR/vision 文本中抽取标准 `Question`,接入 `dedupe_and_rank`,减少 agent 临场读 `raw_text` 手工合成题目的比例。
+- [ ] **Plan 9:端到端 runner + CI**:打通 resume -> search -> connectors -> raw_posts -> questions -> prep_package,并加入 GitHub Actions / 端到端 fixtures。
+- [ ] **Plan 10:抖音图文/视频源 MVP**:优先通过 MediaCrawler 接入抖音图文、标题、描述、评论文本;视频 ASR 先做接口与降级提示,确认高密度面经后再接完整转写。
+- [ ] **持久化术语词典**:跨 session 累积岗位名、公司名、技术词和真实高频术语,用于下一轮查询扩展。
+- [ ] **评测体系**:Golden Set + Trace 回放,覆盖 OCR 抽题、自动抽题、排序和备考包生成质量。
 
 ## 贡献
 
