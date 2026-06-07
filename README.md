@@ -9,7 +9,7 @@
 [![tests](https://github.com/KunChen1110/InterviewRadar/actions/workflows/tests.yml/badge.svg)](https://github.com/KunChen1110/InterviewRadar/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](#)
-[![Claude Skill](https://img.shields.io/badge/Claude-Skill-purple.svg)](#)
+[![Claude/Codex](https://img.shields.io/badge/Agent-Claude%20Code%20%2F%20Codex-purple.svg)](#)
 
 </div>
 
@@ -23,7 +23,7 @@
 - 牛客 / 小红书的真实面经满天飞,但**没人帮你从里面挖出"跟你简历相关、且最近半年高频"的那一小撮**
 - LLM 直接生成的面试题听起来像那么回事,但**没法溯源**——你不知道这道题真有人被问过吗
 
-InterviewRadar 是一个 Claude Skill,把"你给的"变成"它给你的":
+InterviewRadar 是一个可给 Claude Code 或 Codex 使用的面试准备工作流,把"你给的"变成"它给你的":
 
 | 你给的 | 它做的 | 它给你的 |
 |---|---|---|
@@ -57,6 +57,8 @@ InterviewRadar 是一个 Claude Skill,把"你给的"变成"它给你的":
 
 ## 快速开始
 
+### Claude Code 使用
+
 **前置**:已安装 [Claude Code](https://claude.ai/code)。
 
 ```bash
@@ -80,7 +82,28 @@ pip install -r requirements.txt
 方向:AI 应用开发岗
 ```
 
-Claude 会自动:
+### Codex 使用
+
+Codex 不需要走 Claude Skill 安装器。把仓库 clone 到本地,进入项目目录,安装 Python 依赖即可:
+
+```bash
+git clone https://github.com/KunChen1110/InterviewRadar.git
+cd InterviewRadar
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+在 Codex 里直接说:
+
+```text
+按这个项目的 SKILL.md 跑 InterviewRadar:
+简历 /path/to/your-resume.pdf
+方向:AI 应用开发岗
+```
+
+Codex 会读取仓库里的 `SKILL.md`,调用 `scripts/` 下的确定性脚本,并把结果写到 `corpus_cache/prep_package.md`。如果你已经在这个仓库工作区里,不需要额外安装 skill,直接让 Codex 按 `SKILL.md` 执行即可。
+
+Agent 会自动:
 1. 读简历(支持文字 PDF + 图片 + 扫描件)
 2. 用 WebSearch 发现牛客 / 公开正文页 URL
 3. 按域名分桶,调对应 connector 抓取
@@ -94,14 +117,14 @@ Claude 会自动:
 |---|---|
 | 牛客(NowCoder) | 真实面经帖,带 createTime |
 | GitHub | 主流面经仓库的 markdown 题库 |
-| 知乎 / CSDN / 博客类 | 通过 Claude 的 WebFetch 拉正文页 |
+| 知乎 / CSDN / 博客类 | 通过 agent 的网页读取能力拉正文页 |
 
 主流程已覆盖中文圈 90%+ 高频面经源,跑起来不需要任何额外配置。
 
 <details>
 <summary><b>(进阶,可选)接入小红书源</b></summary>
 
-小红书面经笔记很多,但平台反爬严,**不能直接抓**——需要一次性配置 MediaCrawler。配完之后 skill 全自动调用,**不用每次手动跑**。
+小红书面经笔记很多,但平台反爬严,**不能直接抓**——需要一次性配置 MediaCrawler。配完之后 agent 会通过本项目 connector 自动调用,**不用每次手动跑**。
 
 ```bash
 # 一、装 MediaCrawler(默认路径 ~/.mediacrawler)
@@ -115,7 +138,7 @@ cd ~/.mediacrawler && pip install -r requirements.txt
 venv/bin/python main.py --platform xhs --lt cookie --type search --keywords "测试" --save_data_option json --get_comment no
 ```
 
-完事。skill 接下来要小红书数据时会自动 shell out 调 MediaCrawler。登录过期前不用再管。
+完事。Claude Code 或 Codex 接下来要小红书数据时会自动 shell out 调 MediaCrawler。登录过期前不用再管。
 
 详见 [`docs/setup/mediacrawler.md`](docs/setup/mediacrawler.md)。MediaCrawler 仅供个人非商用。
 
@@ -134,7 +157,7 @@ venv/bin/python main.py --platform xhs --lt cookie --type search --keywords "测
 flowchart TD
     R["简历 PDF / 图片"] --> A
     D["模糊岗位方向"] --> A
-    A["Agent (Claude)"] --> S1["Step 1<br/>简历理解<br/>pypdf + 视觉回退"]
+    A["Agent (Claude Code / Codex)"] --> S1["Step 1<br/>简历理解<br/>pypdf + 视觉回退"]
     S1 --> S2["Step 2<br/>种子查询<br/>agent 当场推,不依赖预设词表"]
     S2 --> S3a["Step 3a<br/>WebSearch 发现 URL<br/>按域名分桶"]
     S3a --> S3b["Step 3b: dispatch connector"]
@@ -163,7 +186,7 @@ flowchart TD
 </details>
 
 **分工原则**:
-- agent(Claude)做**推理判断**:领域知识、种子词生成、URL 分桶、项目锚定
+- agent(Claude Code / Codex)做**推理判断**:领域知识、种子词生成、URL 分桶、项目锚定
 - Python 脚本做**确定性脏活**:HTML 解析、时效过滤、去重排序、降级处理
 - 两者通过磁盘 JSON 解耦,可独立调试
 
@@ -181,7 +204,7 @@ flowchart TD
 
 ```
 InterviewRadar/
-├── SKILL.md                     ← Claude Skill 的入口工作流
+├── SKILL.md                     ← Claude Code / Codex 的入口工作流
 ├── scripts/
 │   ├── resume_extract.py        简历理解(文本/视觉回退)
 │   ├── connectors/              source connectors:
