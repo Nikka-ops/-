@@ -14,24 +14,39 @@
 
 ```bash
 # 默认路径是 ~/.mediacrawler/。也可以装到任意位置,然后 export MEDIACRAWLER_HOME=<path>
-git clone https://github.com/NanmiCoder/MediaCrawler.git ~/.mediacrawler
+if [ ! -d "$HOME/.mediacrawler" ]; then
+  git clone https://github.com/NanmiCoder/MediaCrawler.git ~/.mediacrawler
+fi
 cd ~/.mediacrawler
 
-# 用 Python 3.11(它 requirements.txt 锁的版本)
-python3.11 -m venv venv
-venv/bin/pip install -r requirements.txt
-venv/bin/playwright install chromium
+# 用 Python 3.11(它 requirements.txt 锁的版本)。如果本机没有 python3.11,先试 python3
+python3.11 -m venv venv || python3 -m venv venv
+venv/bin/python -m pip install -U pip
+venv/bin/python -m pip install -r requirements.txt
+venv/bin/python -m playwright install chromium
 ```
+
+如果 `~/.mediacrawler` 已经存在,说明你之前 clone 过,不用重新 clone:
+
+```bash
+cd ~/.mediacrawler
+python3.11 -m venv venv || python3 -m venv venv
+venv/bin/python -m pip install -U pip
+venv/bin/python -m pip install -r requirements.txt
+venv/bin/python -m playwright install chromium
+```
+
+如果系统提示 `pip: command not found`,不要装全局 pip,始终用 `venv/bin/python -m pip ...`。
 
 ### 1.5. 关掉默认的 CDP 模式(重要)
 
 MediaCrawler 默认 `ENABLE_CDP_MODE = True`,会尝试连接你**已经开着**的 Chrome(端口 9222),不开就报 "CDP port 9222 is not accessible" 死循环。改成 False 让它用自带的 Playwright Chromium:
 
 ```bash
-sed -i '' 's/^ENABLE_CDP_MODE = True/ENABLE_CDP_MODE = False/' config/base_config.py
+venv/bin/python -c "from pathlib import Path; p=Path('config/base_config.py'); s=p.read_text(encoding='utf-8'); p.write_text(s.replace('ENABLE_CDP_MODE = True', 'ENABLE_CDP_MODE = False'), encoding='utf-8')"
 ```
 
-(macOS sed 语法;Linux 用 `sed -i 's/.../.../' config/base_config.py`。)
+这条命令用 Python 改配置,macOS 和 Linux 都能直接复制;不依赖系统 `sed` 语法。
 
 ### 2. 登录小红书
 
@@ -79,6 +94,19 @@ venv/bin/python main.py --platform xhs --lt cookie --type search --keywords "AI 
 ```
 
 如果成功,会在 `~/.mediacrawler/data/xhs/json/` 下生成 `search_contents_*.json`。
+
+### 3. 选择读取深度:fast / deep
+
+小红书和牛客不一样:很多面经笔记因为文字区有字数限制,正文 caption 只写摘要、岗位名或少量题目,完整问题放在图片里。
+
+因此小红书源必须区分两档:
+
+| 模式 | 读取内容 | 什么时候用 |
+|---|---|---|
+| `fast` | 只读 MediaCrawler JSON 里的标题、正文 caption、标签、发布时间和链接 | 快速验证登录、关键词和召回质量 |
+| `deep` | 在 `fast` 基础上,按 `image_list` 下载图片并做 OCR,把图片文字作为主正文 | 正式产出备考包,尤其是面经/题库类小红书笔记 |
+
+实现上对应 `XiaohongshuConnector(..., enable_image_ocr=False)` 和 `XiaohongshuConnector(..., enable_image_ocr=True)`。默认应优先用 `deep`;如果为了速度临时用 `fast`,最终报告必须写明“未读取图片 OCR,可能漏掉图片里的完整题目”。
 
 #### 方式 B: 二维码登录(备选)
 
