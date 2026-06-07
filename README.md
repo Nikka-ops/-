@@ -281,6 +281,10 @@ InterviewRadar/
 
 欢迎 issue / PR。开发流程一律走 `docs/specs/` → `docs/plans/` → TDD → 二阶段 review。可以翻看 `docs/plans/` 找现成的范本。
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=KunChen1110/InterviewRadar&type=Date)](https://www.star-history.com/#KunChen1110/InterviewRadar&Date)
+
 ## 免责
 
 仅供个人非商用。使用本工具拉取数据的合规性由用户自担。详见 [DISCLAIMER.md](DISCLAIMER.md)。
