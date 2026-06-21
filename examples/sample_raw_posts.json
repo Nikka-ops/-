@@ -1,0 +1,77 @@
+{
+  "description": "Bundled demo corpus for InterviewRadar — synthetic interview posts for offline try-out. Replace with your own scrape output in production.",
+  "posts": [
+    {
+      "source": "nowcoder",
+      "url": "https://www.nowcoder.com/discuss/example/1001",
+      "post_type": "text",
+      "raw_text": "字节 AI 应用开发一面面经\n\n1. 介绍一下你的 RAG 项目，召回和重排怎么做的？\n2. LangChain 和自研编排框架的取舍？\n3. Agent 多工具调用时如何做错误恢复？\n4. 线上延迟高怎么排查？",
+      "posted_at": "2026-03-15",
+      "company": "字节跳动",
+      "role": "AI 应用开发"
+    },
+    {
+      "source": "nowcoder",
+      "url": "https://www.nowcoder.com/discuss/example/1002",
+      "post_type": "text",
+      "raw_text": "美团 AI 应用开发实习二面\n\n- 你简历里的知识库项目，chunk 策略是什么？\n- Embedding 模型怎么选型？\n- Function Calling 和 MCP 的区别？\n- Redis 在项目里承担什么角色？",
+      "posted_at": "2026-04-02",
+      "company": "美团",
+      "role": "AI 应用开发"
+    },
+    {
+      "source": "nowcoder",
+      "url": "https://www.nowcoder.com/discuss/example/1003",
+      "post_type": "text",
+      "raw_text": "阿里通义应用开发岗技术面\n\n1. ReAct 和 Plan-and-Execute 你更熟悉哪种？\n2. 多 Agent 协作如何做状态管理？\n3. 介绍一次 prompt 迭代带来指标提升的案例\n4. 如何评估 RAG 回答质量？",
+      "posted_at": "2026-02-20",
+      "company": "阿里巴巴",
+      "role": "AI 应用开发"
+    },
+    {
+      "source": "xiaohongshu",
+      "url": "https://www.xiaohongshu.com/explore/demo-note-2001",
+      "post_type": "text",
+      "raw_text": "字节 Agent 开发实习面经分享\n\n一面全是项目：\n① 你的状态机有几个阶段？为什么这样拆？\n② 工具调用失败重试策略？\n③ 有没有做过 MCP Server？\n④ 向量库用的什么，为什么？",
+      "posted_at": "2026-05-10",
+      "company": "字节跳动",
+      "role": "Agent开发"
+    },
+    {
+      "source": "xiaohongshu",
+      "url": "https://www.xiaohongshu.com/explore/demo-note-2002",
+      "post_type": "text",
+      "raw_text": "AI 应用开发岗高频题整理\n\n- RAG 幻觉怎么缓解\n- 长上下文 vs 检索增强怎么选\n- 介绍 LoRA 微调经验（如果没有要诚实说）\n- 线上 bad case 怎么闭环",
+      "posted_at": "2026-04-28",
+      "company": "未标注",
+      "role": "AI 应用开发"
+    },
+    {
+      "source": "nowcoder",
+      "url": "https://www.nowcoder.com/discuss/example/1004",
+      "post_type": "text",
+      "raw_text": "腾讯 AI 应用开发社招\n\n1. 介绍 RAG 项目架构\n2. 如何做权限与数据隔离\n3. 流式输出首 token 延迟优化\n4. 你用过哪些 observability 工具？",
+      "posted_at": "2026-01-08",
+      "company": "腾讯",
+      "role": "AI 应用开发"
+    },
+    {
+      "source": "xiaohongshu",
+      "url": "https://www.xiaohongshu.com/explore/demo-note-2003",
+      "post_type": "text",
+      "raw_text": "大厂 AI 实习面经合集\n\n项目深挖：\n- 你的 Agent 和 ChatBot 差异在哪？\n- 记忆模块怎么设计？\n- 评测集从哪来，指标怎么看？",
+      "posted_at": "2026-03-30",
+      "company": "字节跳动",
+      "role": "AI 应用开发"
+    },
+    {
+      "source": "nowcoder",
+      "url": "https://www.nowcoder.com/discuss/example/1005",
+      "post_type": "text",
+      "raw_text": "快手 AI 应用开发一面\n\n1. Python asyncio 和线程池在 Agent 里怎么用？\n2. 介绍一次线上故障复盘\n3. 如何做 A/B 测试验证 prompt 改动",
+      "posted_at": "2025-12-12",
+      "company": "快手",
+      "role": "AI 应用开发"
+    }
+  ]
+}

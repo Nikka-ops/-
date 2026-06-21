@@ -1,0 +1,19 @@
+# 示例简历 — 仅用于本地 demo，请替换为你自己的简历
+
+## 项目经历
+
+### P1 · 企业知识库 RAG 助手（2025.03 – 2025.09）
+- 技术栈：Python、LangChain、Milvus、Redis、FastAPI
+- 负责文档解析、chunk 策略、混合检索（BM25 + 向量）与重排
+- 将首答准确率从 62% 提升到 78%（内部评测集 200 题）
+
+### P2 · 多阶段 Agent 工单诊断（2025.10 – 至今）
+- 状态机：Understanding → Diagnose → Plan → Execute → Verify → Report
+- 集成 6 个内部 API 工具，失败重试 + 降级到人工
+- 平均处理时长从 8 分钟降到 3 分钟
+
+## 技能
+Python、RAG、Agent、Function Calling、Redis、Docker、Prompt Engineering
+
+## 实习
+某互联网公司 AI 平台组 · 后端开发实习 · 2025.06 – 2025.12

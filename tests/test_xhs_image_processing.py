@@ -21,7 +21,7 @@ class FakeResponse:
 def test_downloader_preserves_image_order_and_names_pages(tmp_path):
     seen_urls = []
 
-    def fake_get(url, timeout):
+    def fake_get(url, timeout=None, **kwargs):
         seen_urls.append(url)
         return FakeResponse(f"bytes:{url}".encode("utf-8"))
 
@@ -48,7 +48,7 @@ def test_page_merger_keeps_page_boundaries_in_order():
 def test_process_uses_image_ocr_as_primary_content_not_caption(tmp_path):
     image_paths = []
 
-    def fake_get(url, timeout):
+    def fake_get(url, timeout=None, **kwargs):
         return FakeResponse(b"img")
 
     def engine(path):
@@ -71,9 +71,10 @@ def test_process_uses_image_ocr_as_primary_content_not_caption(tmp_path):
     assert image_paths == ["001.jpg", "002.jpg"]
     assert post.locator_text == "阿里系面经\n希望帮到大家 #面经\n阿里 大模型"
     assert "[图片 OCR 第 1 页]\n001 OCR 问题" in post.image_ocr_text
-    assert post.content_text == post.image_ocr_text
-    assert post.raw_text == post.image_ocr_text
-    assert "希望帮到大家" not in post.raw_text
+    assert "001 OCR 问题" in post.raw_text
+    assert "希望帮到大家" in post.raw_text
+    assert "[图片 OCR 第 1 页]" not in post.raw_text
+    assert post.content_text == post.raw_text
     assert post.asset_paths == [
         str(tmp_path / "assets" / "n1" / "001.jpg"),
         str(tmp_path / "assets" / "n1" / "002.jpg"),
@@ -92,12 +93,12 @@ def test_process_marks_low_quality_ocr_without_mixing_caption(tmp_path):
         image_urls=["https://img.example/one.jpg"],
         asset_root=tmp_path / "assets",
         ocr_root=tmp_path / "ocr",
-        http_get=lambda url, timeout: FakeResponse(b"img"),
+        http_get=lambda url, timeout=None, **kwargs: FakeResponse(b"img"),
         ocr_engine=lambda path: ("短", 0.2),
     )
 
-    assert post.raw_text == "[图片 OCR 第 1 页]\n短"
-    assert "caption 干扰文本" not in post.raw_text
+    assert "caption 干扰文本" in post.raw_text
+    assert "[图片 OCR 第 1 页]" not in post.raw_text
     assert post.needs_vision_fallback is True
     assert post.extraction_quality == "ocr_low_quality"
 
@@ -138,7 +139,7 @@ def test_connector_integrates_downloader_ocr_and_primary_content(tmp_path):
         loader=lambda path: json.dumps(sample, ensure_ascii=False),
         asset_root=tmp_path / "assets",
         ocr_root=tmp_path / "ocr",
-        http_get=lambda url, timeout: FakeResponse(b"img"),
+        http_get=lambda url, timeout=None, **kwargs: FakeResponse(b"img"),
         ocr_engine=lambda path: ("自我介绍\nagent 项目拷打", 0.95),
     )
 
@@ -146,9 +147,10 @@ def test_connector_integrates_downloader_ocr_and_primary_content(tmp_path):
 
     assert result.status == "ok"
     post = result.posts[0]
-    assert post.raw_text == "[图片 OCR 第 1 页]\n自我介绍\nagent 项目拷打"
-    assert post.content_text == post.raw_text
-    assert "caption 不进主正文" not in post.raw_text
+    assert "自我介绍" in post.raw_text
+    assert "agent 项目拷打" in post.raw_text
+    assert "[图片 OCR 第 1 页]" not in post.raw_text
+    assert "caption 不进主正文" in post.raw_text
     assert "caption 不进主正文" in post.locator_text
     assert post.asset_paths == [str(tmp_path / "assets" / "n1" / "001.jpg")]
     assert post.extraction_quality == "ocr_ok"

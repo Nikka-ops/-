@@ -1,0 +1,146 @@
+# 公司名归一化配置（可 PR 扩展）
+# 环境变量 COMPANY_ALIASES_PATH 可指向自定义文件
+#
+# subsidiaries: 子公司 / 事业群 / 别名 → 主公司（与 company_catalog 预设大厂对齐）
+# not_companies: 绝不能当 company_label 的词（大小写不敏感）
+# not_company_patterns: 正则片段，匹配则丢弃
+# parent_canonical: 主公司 canonical 名
+
+subsidiaries:
+  # 阿里巴巴
+  淘天: 阿里巴巴
+  淘天集团: 阿里巴巴
+  天猫: 阿里巴巴
+  淘宝: 阿里巴巴
+  阿里云: 阿里巴巴
+  蚂蚁: 阿里巴巴
+  蚂蚁集团: 阿里巴巴
+  通义千问: 阿里巴巴
+  千问: 阿里巴巴
+  qwen: 阿里巴巴
+  阿里: 阿里巴巴
+  alibaba: 阿里巴巴
+  # 腾讯
+  wxg: 腾讯
+  WXG: 腾讯
+  微信事业群: 腾讯
+  csig: 腾讯
+  CSIG: 腾讯
+  云与智慧产业事业群: 腾讯
+  ieg: 腾讯
+  IEG: 腾讯
+  pcg: 腾讯
+  PCG: 腾讯
+  teg: 腾讯
+  TEG: 腾讯
+  tencent: 腾讯
+  # 字节跳动
+  tiktok: 字节跳动
+  TikTok: 字节跳动
+  抖音: 字节跳动
+  剪映: 字节跳动
+  bytedance: 字节跳动
+  字节: 字节跳动
+  # 其他常见别名
+  美团: 美团
+  meituan: 美团
+  pdd: 拼多多
+  拼多多: 拼多多
+  百度: 百度
+  baidu: 百度
+  华为: 华为
+  huawei: 华为
+  小米: 小米
+  xiaomi: 小米
+  网易: 网易
+  netease: 网易
+  滴滴: 滴滴
+  didi: 滴滴
+  京东: 京东
+  jd: 京东
+  快手: 快手
+  kuaishou: 快手
+  微软: 微软
+  microsoft: 微软
+  谷歌: 谷歌
+  google: 谷歌
+  亚马逊: 亚马逊
+  amazon: 亚马逊
+  商汤: 商汤
+  sensetime: 商汤
+  科大讯飞: 科大讯飞
+  iflytek: 科大讯飞
+  minimax: MiniMax
+  MiniMax: MiniMax
+  bilibili: 哔哩哔哩
+  哔哩哔哩: 哔哩哔哩
+  b站: 哔哩哔哩
+  小红书: 小红书
+
+not_companies:
+  - ai
+  - agent
+  - llm
+  - rag
+  - mcp
+  - langchain
+  - 双非
+  - 实习
+  - 校招
+  - 社招
+  - 秋招
+  - 春招
+  - 面经
+  - 面试
+  - 未标注
+  - 其他
+  - "27"
+  - "26"
+  - "25"
+  - "24"
+
+not_company_patterns:
+  - '^\d{1,2}$'
+  - '^\d{2}年$'
+  - '^\d{2}届'
+  - '实习$'
+  - '^27实习|^26实习|^25实习'
+  - '菜鸡|小硕|原力健康'
+
+parent_canonical:
+  字节跳动: 字节跳动
+  腾讯: 腾讯
+  阿里巴巴: 阿里巴巴
+  美团: 美团
+  百度: 百度
+  京东: 京东
+  拼多多: 拼多多
+  快手: 快手
+  网易: 网易
+  滴滴: 滴滴
+  小米: 小米
+  哔哩哔哩: 哔哩哔哩
+  小红书: 小红书
+  华为: 华为
+  携程: 携程
+  微博: 微博
+  商汤: 商汤
+  科大讯飞: 科大讯飞
+  微软: 微软
+  谷歌: 谷歌
+  亚马逊: 亚马逊
+  MiniMax: MiniMax
+  比亚迪: 比亚迪
+  蔚来: 蔚来
+  理想: 理想
+  小鹏: 小鹏
+  宁德时代: 宁德时代
+  上汽: 上汽
+  吉利: 吉利
+  格力: 格力
+  海尔: 海尔
+  三一重工: 三一重工
+  oppo: OPPO
+  OPPO: OPPO
+  vivo: vivo
+  顺丰: 顺丰

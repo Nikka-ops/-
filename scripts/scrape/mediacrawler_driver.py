@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,29 +110,87 @@ class MediaCrawlerDriver:
         self,
         keywords: list[str],
         timeout: int = 600,
-        login_type: str = "qrcode",
+        login_type: str = "cookie",
+        *,
+        max_keywords_per_batch: int = 2,
+        batch_pause_seconds: float = 45.0,
     ) -> Path:
         """Run MediaCrawler xhs search and return the path to the freshly-produced
         notes JSON.
 
         login_type:
-        - "qrcode" (default): expects MediaCrawler to display a QR code, user
-          must have valid cached login state from a prior scan, OR be willing
-          to scan now. Currently unreliable due to Xiaohongshu anti-bot.
-        - "cookie": MediaCrawler reads `config.COOKIES` (set to
-          "web_session=<value>") and injects it into the browser context.
-          More reliable but requires user to extract cookie from a normal
-          logged-in browser session.
-        - "phone": SMS verification (not supported by this driver).
+        - "cookie" (default): uses `web_session` from MediaCrawler config or
+          `$XHS_WEB_SESSION` / `$INTERVIEWRADAR_XHS_WEB_SESSION` (synced before run).
+        - "qrcode": scan QR in Playwright (higher ban risk).
 
-        Raises MediaCrawlerScrapeError on non-zero exit, missing output, or any
-        other observable failure.
+        Keywords are split into small batches with pauses to reduce account warnings.
         """
         if not keywords:
             raise ValueError("keywords must be non-empty")
         if login_type not in ("qrcode", "cookie", "phone"):
             raise ValueError(f"unsupported login_type: {login_type}")
 
+        self._sync_mc_config_from_env()
+
+        batches: list[list[str]] = []
+        chunk = max(1, int(max_keywords_per_batch))
+        for i in range(0, len(keywords), chunk):
+            batches.append(keywords[i : i + chunk])
+
+        last_path: Path | None = None
+        for i, batch in enumerate(batches):
+            if i and batch_pause_seconds > 0:
+                time.sleep(batch_pause_seconds)
+            last_path = self._scrape_xhs_once(batch, timeout=timeout, login_type=login_type)
+        if last_path is None:
+            raise MediaCrawlerScrapeError("no keyword batches to scrape")
+        return last_path
+
+    def _sync_mc_config_from_env(self) -> None:
+        """Write InterviewRadar env into MediaCrawler config when set."""
+        from scripts.config import xhs_crawler_max_notes, xhs_web_session
+
+        cookie = xhs_web_session()
+        max_notes = xhs_crawler_max_notes()
+        config_path = self.home / "config" / "base_config.py"
+        if not config_path.is_file():
+            return
+        text = config_path.read_text(encoding="utf-8")
+        lines: list[str] = []
+        for line in text.splitlines():
+            if line.startswith("LOGIN_TYPE ="):
+                if cookie:
+                    lines.append('LOGIN_TYPE = "cookie"  # synced from InterviewRadar env')
+                else:
+                    lines.append(line)
+            elif line.startswith("COOKIES ="):
+                if cookie:
+                    lines.append(f'COOKIES = "web_session={cookie}"')
+                else:
+                    lines.append(line)
+            elif line.startswith("CRAWLER_MAX_NOTES_COUNT ="):
+                lines.append(f"CRAWLER_MAX_NOTES_COUNT = {max_notes}")
+            elif line.startswith("ENABLE_GET_COMMENTS ="):
+                lines.append("ENABLE_GET_COMMENTS = False")
+            elif line.startswith("ENABLE_CDP_MODE ="):
+                lines.append("ENABLE_CDP_MODE = False")
+            elif line.startswith("ENABLE_GET_MEIDAS ="):
+                lines.append("ENABLE_GET_MEIDAS = True")
+            else:
+                lines.append(line)
+        config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def _sync_cookie_from_env(self) -> None:
+        """Backward-compatible alias."""
+        self._sync_mc_config_from_env()
+
+    def _scrape_xhs_once(
+        self,
+        keywords: list[str],
+        *,
+        timeout: int,
+        login_type: str,
+    ) -> Path:
         cmd = [
             self.python_executable,
             str(self.home / "main.py"),

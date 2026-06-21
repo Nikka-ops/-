@@ -15,6 +15,8 @@ class RawPost:
     image_ocr_text: str | None = None
     needs_vision_fallback: bool = False
     extraction_quality: str = "text_only"  # text_only | ocr_ok | ocr_low_quality
+    company: str | None = None
+    role: str | None = None
 
     def __post_init__(self) -> None:
         if not self.locator_text:
@@ -37,6 +39,8 @@ class RawPost:
         data.setdefault("extraction_quality", "text_only")
         data.setdefault("asset_paths", [])
         data.setdefault("comments", [])
+        data.setdefault("company", None)
+        data.setdefault("role", None)
         allowed = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in allowed})
 
@@ -48,15 +52,22 @@ class Question:
     freq: int = 1
     latest_posted_at: str | None = None  # most recent posted_at among merged duplicates
     role_tags: list[str] = field(default_factory=list)
+    company_tags: list[str] = field(default_factory=list)
     topic: str = ""
     modality_origin: str = "text"  # text | ocr | vision
+    variants: list[str] = field(default_factory=list)  # paraphrases merged into this cluster
+    cluster_id: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Question":
-        return cls(**d)
+        data = dict(d)
+        data.setdefault("variants", [])
+        data.setdefault("cluster_id", "")
+        allowed = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in allowed})
 
 
 @dataclass

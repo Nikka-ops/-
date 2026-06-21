@@ -3,12 +3,14 @@ from scripts.models import RawPost, Question, FollowUpChain
 
 def test_rawpost_roundtrips_through_dict():
     post = RawPost(
-        source="github",
+        source="nowcoder",
         url="https://example.com/p1",
         post_type="text",
         raw_text="What is MCP?",
         asset_paths=[],
         comments=["see docs"],
+        company="字节跳动",
+        role="AI 应用开发",
     )
     assert RawPost.from_dict(post.to_dict()) == post
 
@@ -19,6 +21,7 @@ def test_question_roundtrips_through_dict():
         source_refs=["https://example.com/p1"],
         freq=2,
         role_tags=["agent"],
+        company_tags=["字节跳动"],
         topic="protocols",
         modality_origin="text",
     )

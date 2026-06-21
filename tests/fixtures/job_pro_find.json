@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "keyword": "AI应用",
+  "total": 2,
+  "company_count": 2,
+  "results": [
+    {
+      "company": "tencent",
+      "ok": true,
+      "count": 1,
+      "positions": [
+        {
+          "post_id": "1224696110585937920",
+          "title": "AI应用开发",
+          "project": "应届实习",
+          "recruit_label": "应届实习",
+          "work_cities": "深圳总部 北京",
+          "apply_url": "https://join.qq.com/post_detail.html?postid=1224696110585937920"
+        }
+      ]
+    },
+    {
+      "company": "bytedance",
+      "ok": true,
+      "count": 1,
+      "positions": [
+        {
+          "post_id": "7646352357621582085",
+          "title": "AI应用后端开发",
+          "project": "后端",
+          "recruit_label": "正式",
+          "work_cities": "上海",
+          "apply_url": "https://jobs.bytedance.com/campus/position/7646352357621582085/detail"
+        }
+      ]
+    }
+  ],
+  "failed": []
+}

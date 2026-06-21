@@ -1,0 +1,21 @@
+{
+  "code": 0,
+  "data": {
+    "job_post_list": [
+      {
+        "id": "7579175902216866101",
+        "title": "AI应用开发工程师-抖音",
+        "description": "负责 AI 应用开发与 RAG 落地。",
+        "requirement": "熟悉 Python、LLM 应用开发。",
+        "city_info": {"name": "北京", "i18n_name": "北京"},
+        "recruit_type": {
+          "name": "正式",
+          "parent": {"name": "社招", "i18n_name": "社招"}
+        },
+        "job_category": {"name": "研发"},
+        "publish_time": 1764664441763,
+        "code": "A132059A"
+      }
+    ]
+  }
+}

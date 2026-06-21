@@ -22,6 +22,15 @@ def test_dedupe_merges_and_sums_freq():
     assert top.role_tags == ["agent", "llm"]
 
 
+def test_dedupe_merges_company_tags():
+    qs = [
+        Question("What is MCP?", ["u1"], company_tags=["字节跳动"]),
+        Question("what is  mcp", ["u2"], company_tags=["腾讯"]),
+    ]
+    out = dedupe_and_rank(qs)
+    assert out[0].company_tags == ["字节跳动", "腾讯"]
+
+
 def test_rank_sorts_by_freq_desc():
     qs = [
         Question("rare", ["a"]),

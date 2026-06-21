@@ -15,6 +15,8 @@ def test_parse_extracts_text_and_date():
     assert "MCP 和 Skill 的区别" in post.raw_text
     assert "agent 项目架构" in post.raw_text
     assert "字节 AI 应用开发 一面面经" in post.raw_text
+    assert post.company == "字节跳动"
+    assert post.role == "AI 应用开发"
 
 
 def test_connector_search_uses_injected_fetcher():
@@ -37,6 +39,18 @@ def test_connector_degrades_on_fetch_error():
     assert result.status == "degraded"
     assert result.posts == []
     assert "cookie" in result.message.lower()
+
+
+def test_parse_handles_nc_post_content_selector():
+    html = (
+        "<div class='content-post-title'><h1>【面试真题】字节 AI 应用岗</h1></div>"
+        "<div class='nc-post-content'><p>问了 MCP 和 Agent 兜底策略。</p></div>"
+        '<script>{"createTime":1758326400000}</script>'
+    )
+    post = parse_nowcoder_post(html, "https://nowcoder.com/p/new")
+    assert "MCP 和 Agent 兜底策略" in post.raw_text
+    assert post.company == "字节跳动"
+    assert post.role == "AI 应用开发"
 
 
 def test_parse_missing_date_yields_none():

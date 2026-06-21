@@ -133,7 +133,7 @@ def test_scrape_passes_keywords_as_comma_joined(tmp_path: Path):
         return _Result(returncode=0)
 
     driver = MediaCrawlerDriver(home=home, runner=fake_runner)
-    driver.scrape_xhs(["Agent", "RAG", "LangChain"])
+    driver.scrape_xhs(["Agent", "RAG", "LangChain"], max_keywords_per_batch=10)
 
     assert len(seen_cmds) == 1
     cmd = seen_cmds[0]
@@ -216,7 +216,7 @@ def test_scrape_requires_nonempty_keywords(tmp_path: Path):
         driver.scrape_xhs([])
 
 
-def test_scrape_login_type_defaults_to_qrcode(tmp_path: Path):
+def test_scrape_login_type_defaults_to_cookie(tmp_path: Path):
     home = _make_fake_home(tmp_path)
     out_dir = home / "data" / "xhs" / "json"
 
@@ -232,7 +232,7 @@ def test_scrape_login_type_defaults_to_qrcode(tmp_path: Path):
 
     cmd = seen[0]
     lt_idx = cmd.index("--lt")
-    assert cmd[lt_idx + 1] == "qrcode"
+    assert cmd[lt_idx + 1] == "cookie"
 
 
 def test_scrape_login_type_cookie_passes_through(tmp_path: Path):

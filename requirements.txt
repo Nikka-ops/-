@@ -1,3 +1,6 @@
+# Prefer: pip install -e ".[dev]"  (see pyproject.toml)
+# This file is kept for compatibility with older install docs / CI mirrors.
+
 pypdf==4.3.1
 requests==2.32.3
 pytest==8.3.2

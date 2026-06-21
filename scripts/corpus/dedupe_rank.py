@@ -24,6 +24,14 @@ def _max_date(a: str | None, b: str | None) -> str | None:
     return max(candidates) if candidates else None
 
 
+def _append_variant_dedupe(into: Question, text: str) -> None:
+    t = text.strip()
+    if not t or t == into.text:
+        return
+    if t not in into.variants:
+        into.variants.append(t)
+
+
 def _recency_weight(posted_at: str | None, today: date) -> float:
     if not posted_at:
         return 0.2
@@ -32,10 +40,10 @@ def _recency_weight(posted_at: str | None, today: date) -> float:
     except ValueError:
         return 0.2
     days = (today - d).days
-    if days <= 365:
+    if days <= 180:
         return 1.0
-    if days <= 730:
-        return 0.6
+    if days <= 365:
+        return 0.75
     return 0.3
 
 
@@ -58,16 +66,19 @@ def dedupe_and_rank(questions: list[Question], today: date | None = None) -> lis
                 freq=q.freq,
                 latest_posted_at=q.latest_posted_at,
                 role_tags=list(q.role_tags),
+                company_tags=list(q.company_tags),
                 topic=q.topic,
                 modality_origin=q.modality_origin,
             )
             order.append(key)
         else:
             m = merged[key]
+            _append_variant_dedupe(m, q.text)
             m.freq += q.freq
             m.latest_posted_at = _max_date(m.latest_posted_at, q.latest_posted_at)
             _union(m.source_refs, q.source_refs)
             _union(m.role_tags, q.role_tags)
+            _union(m.company_tags, q.company_tags)
 
     def score(k: str) -> float:
         q = merged[k]

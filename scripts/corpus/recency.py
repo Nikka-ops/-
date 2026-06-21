@@ -1,6 +1,10 @@
+"""Filter RawPosts by recency window."""
 from datetime import date, datetime
 
 from scripts.models import RawPost
+
+# 面经时效：近三个月
+RECENCY_WINDOW_DAYS = 90
 
 
 def _parse(posted_at: str | None) -> date | None:
@@ -13,7 +17,9 @@ def _parse(posted_at: str | None) -> date | None:
 
 
 def filter_recent(
-    posts: list[RawPost], window_days: int = 730, today: date | None = None
+    posts: list[RawPost],
+    window_days: int = RECENCY_WINDOW_DAYS,
+    today: date | None = None,
 ) -> list[RawPost]:
     ref = today or date.today()
     kept: list[RawPost] = []

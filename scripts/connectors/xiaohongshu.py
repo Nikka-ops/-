@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.connectors.base import Connector, SearchResult
+from scripts.corpus.classify import extract_company_role
 from scripts.models import RawPost
 from scripts.ocr.xhs_images import build_locator_text, process_xhs_note_images
 from scripts.scrape.mediacrawler_driver import MediaCrawlerDriver
@@ -27,6 +28,7 @@ def _posts_from_notes(notes: list[dict]) -> list[RawPost]:
         desc = (note.get("desc") or "").strip()
         tags = _coerce_tags(note.get("tags") or note.get("tag_list"))
         raw_text = build_locator_text(title, desc, tags)
+        company, role = extract_company_role(title=title, tags=tags, desc=desc)
         posts.append(
             RawPost(
                 source="xiaohongshu",
@@ -38,6 +40,8 @@ def _posts_from_notes(notes: list[dict]) -> list[RawPost]:
                 locator_text=raw_text,
                 content_text=raw_text,
                 extraction_quality="text_only",
+                company=company,
+                role=role,
             )
         )
     return posts

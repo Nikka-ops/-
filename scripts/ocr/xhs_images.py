@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import requests
 
 from scripts.models import RawPost
+from scripts.corpus.classify import extract_company_role
+from scripts.corpus.post_text_merge import merge_article_and_ocr
 from scripts.ocr.extract import OcrEngine, extract_text_from_image
 
 
@@ -106,7 +108,15 @@ class XHSAssetDownloader:
             path = note_dir / f"{index:03d}{_extension_from_url(url)}"
             if not path.exists():
                 try:
-                    response = self.http_get(url, timeout=self.timeout)
+                    response = self.http_get(
+                        url,
+                        timeout=self.timeout,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "Referer": "https://www.xiaohongshu.com/",
+                        },
+                    )
                     response.raise_for_status()
                     path.write_bytes(response.content)
                 except Exception:
@@ -200,6 +210,8 @@ def process_xhs_note_images(
     enable_ocr: bool = True,
 ) -> RawPost:
     locator_text = build_locator_text(title, desc, tags)
+    company, role = extract_company_role(title=title, tags=tags, desc=desc)
+    meta = {"company": company, "role": role}
     if not image_urls or not enable_ocr:
         return RawPost(
             source="xiaohongshu",
@@ -211,6 +223,7 @@ def process_xhs_note_images(
             locator_text=locator_text,
             content_text=locator_text,
             extraction_quality="text_only",
+            **meta,
         )
 
     downloader = XHSAssetDownloader(asset_root=asset_root, http_get=http_get)
@@ -227,6 +240,7 @@ def process_xhs_note_images(
             content_text=locator_text,
             needs_vision_fallback=True,
             extraction_quality="text_only",
+            **meta,
         )
 
     pages = XHSImageOCRProcessor(ocr_root=ocr_root, engine=ocr_engine).process(note_id, asset_paths)
@@ -244,19 +258,22 @@ def process_xhs_note_images(
             image_ocr_text=None,
             needs_vision_fallback=True,
             extraction_quality="text_only",
+            **meta,
         )
 
     needs_vision = _is_low_quality(pages, image_ocr_text)
+    body_text = merge_article_and_ocr(locator_text, image_ocr_text)
     return RawPost(
         source="xiaohongshu",
         url=note_url,
         post_type="image",
-        raw_text=image_ocr_text,
+        raw_text=body_text,
         posted_at=posted_at,
         asset_paths=[str(path) for path in asset_paths],
         locator_text=locator_text,
-        content_text=image_ocr_text,
+        content_text=body_text,
         image_ocr_text=image_ocr_text,
         needs_vision_fallback=needs_vision,
         extraction_quality="ocr_low_quality" if needs_vision else "ocr_ok",
+        **meta,
     )
