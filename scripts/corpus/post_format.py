@@ -77,8 +77,9 @@ def split_body_lines(text: str) -> list[str]:
         if not line:
             lines.append("")
             continue
-        # 一行里多个「1.」「2.」拆成多行
-        parts = re.split(r"(?=(?:\d+[\.\、\)）]\s*))", line)
+        # Split "1. foo 2. bar" into separate lines, but only when there's
+        # non-digit content before the next number (avoids "10." → "1" + "0. …").
+        parts = re.split(r"(?<=[^\d])\s+(?=\d+[\.\、\)）]\s)", line)
         for part in parts:
             p = part.strip()
             if p:

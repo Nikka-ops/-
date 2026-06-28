@@ -8,17 +8,27 @@ let currentCompanies = [];
 let currentSlug = null;
 let frequencyReportText = "";
 let activeCompany = "";
+let activeSource = "all";
+let activeTopic = "all";
+let activeConfidence = "all";
+let bankUiStats = null;
+let bankTopics = [];
 let viewMode = "posts";
 let techRoles = [];
 let mergedBankCount = 0;
-let selectedRoleId = "ai_app";
+let focusRoleIds = ["data", "ai_app"];
+const FOCUS_ROLE_FALLBACK = [
+  { id: "data", label: "数据开发", search_as: "数据开发", category: "技术岗", keywords: [] },
+  { id: "ai_app", label: "Agent 开发", search_as: "Agent 开发", category: "技术岗", keywords: [] },
+];
+let selectedRoleId = "data";
 let currentJobs = [];
 let jobsMeta = null;
 let jobsLoading = false;
 let jobsLoadError = "";
 let companyGroups = [];
 
-const RECENCY_WINDOW_DAYS = 365;
+const RECENCY_WINDOW_DAYS = 90;
 const MERGED_AI_ROLE_NORMS = new Set(["ai应用开发", "agent开发", "ai/agent应用开发"]);
 
 function canonicalRoleId(id) {
@@ -178,7 +188,9 @@ function renderPostImages(post, { modal = false } = {}) {
     return renderImageCarousel(post);
   }
   const cls = "post-images card-thumb";
-  return `<div class="${cls}"><figure class="post-image-fig"><img src="${escapeHtml(imageProxyUrl(urls[0]))}" alt="面经封面" loading="lazy" /></figure>${urls.length > 1 ? `<span class="img-more">共 ${urls.length} 页</span>` : ""}</div>`;
+  const company = post.company_label || post.company || "";
+  const fallbackStyle = `background:${companyGradient(company)}`;
+  return `<div class="${cls}"><figure class="post-image-fig"><img src="${escapeHtml(imageProxyUrl(urls[0]))}" alt="面经封面" loading="lazy" onerror="this.style.display='none';this.parentElement.style.cssText='${fallbackStyle};display:flex;align-items:center;justify-content:center';this.parentElement.innerHTML+='<span class=\\'card-co-badge\\'>${escapeHtml(company)}</span>'" /></figure>${urls.length > 1 ? `<span class="img-more">共 ${urls.length} 页</span>` : ""}</div>`;
 }
 
 function postImageUrls(post) {
@@ -227,9 +239,15 @@ function companyGradient(name) {
 
 function sourceLabel(ref, source) {
   const s = ref || source || "";
-  if (s.includes("xiaohongshu") || s.includes("xhs")) return { name: "小红书", cls: "src-xhs" };
-  if (s.includes("nowcoder")) return { name: "牛客", cls: "src-nc" };
-  return { name: source === "xiaohongshu" ? "小红书" : source === "nowcoder" ? "牛客" : "面经", cls: "src-default" };
+  if (s.includes("xiaohongshu") || s.includes("xhs")) return { name: "小红书", cls: "src-xhs", id: "xiaohongshu" };
+  if (s.includes("nowcoder")) return { name: "牛客", cls: "src-nc", id: "nowcoder" };
+  if (source === "xiaohongshu") return { name: "小红书", cls: "src-xhs", id: "xiaohongshu" };
+  if (source === "nowcoder") return { name: "牛客", cls: "src-nc", id: "nowcoder" };
+  return { name: "其他", cls: "src-default", id: "other" };
+}
+
+function postSourceKind(post) {
+  return sourceLabel(post.url, post.source).id;
 }
 
 function highlightText(text, query) {
@@ -320,6 +338,15 @@ function showRolePending(role) {
   renderCurrentView();
 }
 
+function applyFocusRoleFilter() {
+  const allowed = new Set(focusRoleIds.map(canonicalRoleId));
+  techRoles = (techRoles.length ? techRoles : FOCUS_ROLE_FALLBACK).filter((r) =>
+    allowed.has(canonicalRoleId(r.id)),
+  );
+  if (!techRoles.length) techRoles = [...FOCUS_ROLE_FALLBACK];
+  if (!allowed.has(selectedRoleId)) selectedRoleId = techRoles[0].id;
+}
+
 function renderRoleChips(container, onSelect) {
   if (!container || !techRoles.length) return;
   container.innerHTML = techRoles
@@ -398,6 +425,8 @@ async function selectRole(roleId) {
   renderCurrentView();
 }
 
+const OTHER_BUCKET = "其他";
+
 function allPresetCompanies() {
   const set = new Set();
   companyGroups.forEach((g) => (g.companies || []).forEach((c) => set.add(c)));
@@ -427,20 +456,34 @@ function totalItemsForCurrentView() {
   return currentPosts.length;
 }
 
-function collectOtherCompanies(counts, presetSet) {
-  const other = new Set();
-  const addName = (name) => {
-    const n = String(name || "").trim();
-    if (n && n !== "未标注" && !presetSet.has(n)) other.add(n);
-  };
-  currentCompanies.forEach((c) => addName(c.name));
-  currentPosts.forEach((p) => addName(p.company_label));
-  currentJobs.forEach((j) => addName(j.company));
-  bankQuestionRows().forEach((q) => (q.company_tags || []).forEach(addName));
-  Object.keys(counts).forEach((n) => addName(n));
-  return [...other].sort(
-    (a, b) => (counts[b] || 0) - (counts[a] || 0) || a.localeCompare(b, "zh-CN"),
-  );
+function otherCompanyCount(counts, presetSet) {
+  let total = 0;
+  for (const [name, n] of Object.entries(counts)) {
+    const label = String(name || "").trim();
+    if (label && label !== "未标注" && !presetSet.has(label)) total += n;
+  }
+  return total;
+}
+
+function matchesCompanyLabel(label) {
+  if (!activeCompany) return true;
+  const n = String(label || "").trim();
+  if (activeCompany === OTHER_BUCKET) {
+    return n && n !== "未标注" && !allPresetCompanies().has(n);
+  }
+  return n === activeCompany;
+}
+
+function matchesCompanyTags(tags) {
+  if (!activeCompany) return true;
+  const list = tags || [];
+  if (activeCompany === OTHER_BUCKET) {
+    return list.some((t) => {
+      const n = String(t || "").trim();
+      return n && n !== "未标注" && !allPresetCompanies().has(n);
+    });
+  }
+  return list.includes(activeCompany);
 }
 
 function companyChipHtml(name, count, active) {
@@ -470,12 +513,9 @@ function renderCompanyChips() {
     html += `<div class="company-group"><div class="company-group-head"><span class="company-group-label">${escapeHtml(group.label)}</span></div><div class="chip-row">${chips}</div></div>`;
   });
 
-  const others = collectOtherCompanies(counts, presetSet);
-  if (others.length) {
-    const chips = others
-      .map((name) => companyChipHtml(name, counts[name] || 0, activeCompany === name))
-      .join("");
-    html += `<div class="company-group"><div class="company-group-head"><span class="company-group-label">其他</span></div><div class="chip-row">${chips}</div></div>`;
+  const others = otherCompanyCount(counts, presetSet);
+  if (others > 0) {
+    html += `<div class="company-group"><div class="company-group-head"><span class="company-group-label">其他</span></div><div class="chip-row">${companyChipHtml(OTHER_BUCKET, others, activeCompany === OTHER_BUCKET)}</div></div>`;
   }
 
   container.innerHTML = html;
@@ -492,7 +532,8 @@ function renderCompanyChips() {
 function filteredPosts() {
   const search = $("searchQ").value.trim().toLowerCase();
   return currentPosts.filter((p) => {
-    if (activeCompany && p.company_label !== activeCompany) return false;
+    if (!matchesCompanyLabel(p.company_label)) return false;
+    if (activeSource !== "all" && postSourceKind(p) !== activeSource) return false;
     if (!search) return true;
     const hay = [p.title, p.preview, p.raw_text, p.company_label, p.role_label, p.source]
       .join(" ")
@@ -501,21 +542,55 @@ function filteredPosts() {
   });
 }
 
+function postsBySource(list) {
+  const xhs = [];
+  const nc = [];
+  const other = [];
+  for (const p of list) {
+    const kind = postSourceKind(p);
+    if (kind === "xiaohongshu") xhs.push(p);
+    else if (kind === "nowcoder") nc.push(p);
+    else other.push(p);
+  }
+  return { xhs, nc, other };
+}
+
+function bindPostCards(container, list) {
+  container.querySelectorAll(".post-card").forEach((el) => {
+    const idx = Number(el.dataset.index);
+    const open = () => openPostModal(list[idx]);
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
+}
+
+function renderPostGrid(container, list, query) {
+  container.innerHTML = list.map((p, i) => renderPostCard(p, i, query)).join("");
+  bindPostCards(container, list);
+}
+
 function renderPostCard(post, index, query) {
   const src = sourceLabel(post.url, post.source);
   const company = post.company_label || "未标注";
   const hasImg = postImageUrls(post).length > 0;
-  const coverH = hasImg ? 120 : 56 + Math.min(48, Math.floor((post.preview || "").length / 8));
-  const thumb = hasImg ? renderPostImages(post) : "";
-  const previewText = post.preview || (hasImg ? "图片面经，点击查看" : "");
-  return `<article class="feed-card post-card" role="listitem" data-index="${index}" tabindex="0">
-    <div class="card-cover${hasImg ? " has-image" : ""}" style="height:${coverH}px;background:${hasImg ? "#f0f0f0" : companyGradient(company)}">
-      ${thumb}
-      <span class="card-src ${src.cls}">${src.name}</span>
-      <span class="card-co-badge">${escapeHtml(company)}</span>
-    </div>
+  const previewText = post.preview || (hasImg ? "图片面经 · 含 OCR" : "");
+  const imgBadge = post.images_only ? '<span class="pill pill-img">图</span>' : "";
+  const cover = hasImg
+    ? `<div class="card-thumb-wrap">${renderPostImages(post)}</div>`
+    : `<div class="card-cover-text" style="background:${companyGradient(company)}"><span class="card-co-badge">${escapeHtml(company)}</span></div>`;
+  return `<article class="feed-card post-card${post.images_only ? " images-only" : ""}${hasImg ? " has-thumb" : ""}" role="listitem" data-index="${index}" tabindex="0">
+    ${cover}
     <div class="card-body">
-      <h3 class="card-title">${highlightText(post.title || "面经分享", query)}</h3>
+      <div class="card-head-row">
+        <span class="card-src ${src.cls}">${src.name}</span>
+        ${hasImg ? `<span class="card-co-inline">${escapeHtml(company)}</span>` : ""}
+      </div>
+      <h3 class="card-title">${imgBadge}${highlightText(post.title || "面经分享", query)}</h3>
       <p class="card-preview">${highlightText(previewText, query)}</p>
       <div class="card-foot">
         <span class="card-role">${escapeHtml(post.role_label || "")}</span>
@@ -534,6 +609,8 @@ function setViewMode(mode) {
   $("exportBank").hidden = mode === "jobs";
   $("exportMd").hidden = mode === "jobs";
   $("exportJobs").hidden = mode !== "jobs";
+  syncSourceFilterBar();
+  syncBankFilterBar();
   renderCompanyChips();
   if (mode === "jobs") {
     loadLatestJobsSnapshot();
@@ -570,20 +647,52 @@ function bankQuestionRows() {
       latest_posted_at: c.latest_posted_at,
       score: c.score,
       source_refs: c.source_refs,
+      source_labels: c.source_labels || [],
+      related_posts: c.related_posts || [],
     })),
   );
+}
+
+function syncBankFilterBar() {
+  const bar = $("bankFilterBar");
+  if (!bar) return;
+  const total = bankQuestionRows().length;
+  const show = viewMode === "bank" && total > 0;
+  bar.hidden = !show;
+
+  const topicRoot = $("bankTopicFilter");
+  if (topicRoot && show) {
+    const topics = [{ name: "all", count: total, label: "全部" }, ...bankTopics.map((t) => ({ ...t, label: t.name }))];
+    topicRoot.innerHTML = topics
+      .map((t) => {
+        const key = t.name === "all" ? "all" : t.name;
+        const label = key === "all" ? `全部 ${t.count}` : `${t.name} ${t.count}`;
+        const on = activeTopic === key;
+        return `<button type="button" class="chip bank-topic-chip${on ? " active" : ""}" data-topic="${escapeHtml(key)}" role="tab" aria-selected="${on ? "true" : "false"}">${escapeHtml(label)}</button>`;
+      })
+      .join("");
+  }
+
+  bar.querySelectorAll(".bank-conf-chip").forEach((btn) => {
+    const on = btn.dataset.confidence === activeConfidence;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
 }
 
 function filteredQuestions() {
   const search = $("searchQ").value.trim().toLowerCase();
   return bankQuestionRows().filter((q) => {
-    if (activeCompany && !(q.company_tags || []).includes(activeCompany)) return false;
+    if (!matchesCompanyTags(q.company_tags)) return false;
+    if (activeTopic !== "all" && (q.topic || "综合") !== activeTopic) return false;
+    if (activeConfidence !== "all" && (q.confidence || "低频") !== activeConfidence) return false;
     if (!search) return true;
     const hay = [
       q.text,
       ...(q.variants || []),
       q.topic,
       ...(q.company_tags || []),
+      ...(q.source_labels || []),
     ]
       .join(" ")
       .toLowerCase();
@@ -591,10 +700,43 @@ function filteredQuestions() {
   });
 }
 
+function renderQuestionItem(q, query, displayRank) {
+  const srcPills = (q.source_labels || []).slice(0, 2).map((s) => {
+    const cls = s === "小红书" ? "src-xhs" : s === "牛客" ? "src-nc" : "";
+    return `<span class="pill ${cls}">${escapeHtml(s)}</span>`;
+  }).join("");
+  const ansBadge = q.answer ? '<span class="pill answer-pill">有解答</span>' : "";
+  const rankNum = displayRank ?? q.rank ?? "";
+  return `<li class="cluster-item question-item" data-id="${escapeHtml(q.cluster_id || String(q.rank))}">
+    <div class="cluster-rank">#${rankNum}</div>
+    <div class="cluster-body">
+      <div class="cluster-title">${highlightText(q.text, query)}</div>
+      <div class="cluster-meta">
+        <span class="pill conf-${escapeHtml(q.confidence || "低频")}">${escapeHtml(q.confidence || "低频")}</span>
+        <span class="pill">出现 ${q.batch_count ?? q.freq ?? 1} 次</span>
+        <span class="pill topic">${escapeHtml(q.topic || "综合")}</span>
+        ${ansBadge}
+        ${srcPills}
+        ${(q.company_tags || []).slice(0, 2).map((co) => `<span class="pill">${escapeHtml(co)}</span>`).join("")}
+      </div>
+      ${(q.variants || []).length ? `<p class="cluster-variants">同类：${escapeHtml(q.variants.slice(0, 2).join("；"))}</p>` : ""}
+    </div>
+  </li>`;
+}
+
+function bindQuestionItems(container, list) {
+  container.querySelectorAll(".question-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      const q = list.find((x) => (x.cluster_id || String(x.rank)) === el.dataset.id);
+      if (q) openQuestionModal(q);
+    });
+  });
+}
+
 function filteredClusters() {
   const search = $("searchQ").value.trim().toLowerCase();
   return currentClusters.filter((c) => {
-    if (activeCompany && !(c.company_tags || []).includes(activeCompany)) return false;
+    if (!matchesCompanyTags(c.company_tags)) return false;
     if (!search) return true;
     const hay = [
       c.representative,
@@ -610,44 +752,67 @@ function renderBankView() {
   const query = $("searchQ").value.trim();
   const list = filteredQuestions();
   const total = bankQuestionRows().length;
+  syncSourceFilterBar();
+  syncBankFilterBar();
   $("feedGrid").hidden = true;
-  $("bankListView").hidden = list.length === 0;
+  $("feedSections").hidden = true;
+
+  const useSections = activeTopic === "all" && activeConfidence === "all" && list.length > 0;
+  $("bankListView").hidden = useSections || list.length === 0;
+  $("bankSections").hidden = !useSections;
   $("jobsListView").hidden = true;
   $("feedEmpty").hidden = list.length > 0 || total === 0;
-  $("feedHint").hidden = query.length > 0 || activeCompany || total > 0;
+  $("feedHint").hidden = query.length > 0 || activeCompany || activeTopic !== "all" || activeConfidence !== "all" || total > 0;
 
   if (currentBank) {
     $("feedMeta").hidden = false;
-    $("bankTitle").textContent = `${currentBank.role || "题库"} · 题目列表`;
+    $("bankTitle").textContent = `${currentBank.role || "题库"} · 高频面试题`;
     const win = currentBank.recency_window_days || RECENCY_WINDOW_DAYS;
+    const stats = bankUiStats || {};
+    const srcHint = stats.xhs_refs != null ? ` · 来源引用 小红书 ${stats.xhs_refs || 0} · 牛客 ${stats.nc_refs || 0}` : "";
     $("bankSubtitle").textContent =
-      `${list.length} / ${total} 道题 · 近 ${win} 天面经 · 按出现频次排序`;
+      `${list.length} / ${total} 道题 · 高频 ${stats.high || 0} · 中频 ${stats.medium || 0} · 近 ${win} 天面经${srcHint} · Top 题含 Agent 参考解答`;
   }
 
-  $("bankListView").innerHTML = list
-    .map(
-      (q) => `<li class="cluster-item question-item" data-id="${escapeHtml(q.cluster_id || String(q.rank))}">
-        <div class="cluster-rank">#${q.rank ?? ""}</div>
-        <div class="cluster-body">
-          <div class="cluster-title">${highlightText(q.text, query)}</div>
-          <div class="cluster-meta">
-            <span class="pill conf-${escapeHtml(q.confidence || "低频")}">${escapeHtml(q.confidence || "低频")}</span>
-            <span class="pill">出现 ${q.batch_count ?? q.freq ?? 1} 次</span>
-            <span class="pill topic">${escapeHtml(q.topic || "综合")}</span>
-            ${(q.company_tags || []).slice(0, 2).map((co) => `<span class="pill">${escapeHtml(co)}</span>`).join("")}
+  if (useSections) {
+    const byTopic = new Map();
+    for (const q of list) {
+      const topic = q.topic || "综合";
+      if (!byTopic.has(topic)) byTopic.set(topic, []);
+      byTopic.get(topic).push(q);
+    }
+    const order = bankTopics.map((t) => t.name).filter((n) => byTopic.has(n));
+    if (byTopic.has("综合") && !order.includes("综合")) order.push("综合");
+    for (const name of byTopic.keys()) {
+      if (!order.includes(name)) order.push(name);
+    }
+    $("bankSections").innerHTML = order
+      .filter((name) => (byTopic.get(name) || []).length)
+      .map((name) => {
+        const rows = byTopic.get(name) || [];
+        const gridId = `bank-section-${name.replace(/[^\w\u4e00-\u9fff]+/g, "_")}`;
+        return `<section class="bank-topic-section" aria-label="${escapeHtml(name)}">
+          <div class="feed-section-head">
+            <h2 class="feed-section-title"><span class="section-topic">${escapeHtml(name)}</span><span class="section-count">${rows.length} 题</span></h2>
           </div>
-          ${(q.variants || []).length ? `<p class="cluster-variants">同类：${escapeHtml(q.variants.slice(0, 2).join("；"))}</p>` : ""}
-        </div>
-      </li>`
-    )
-    .join("");
-
-  $("bankListView").querySelectorAll(".question-item").forEach((el) => {
-    el.addEventListener("click", () => {
-      const q = list.find((x) => (x.cluster_id || String(x.rank)) === el.dataset.id);
-      if (q) openQuestionModal(q);
+          <ol id="${gridId}" class="bank-rank-list bank-section-list"></ol>
+        </section>`;
+      })
+      .join("");
+    order.filter((name) => (byTopic.get(name) || []).length).forEach((name) => {
+      const rows = byTopic.get(name) || [];
+      const gridId = `bank-section-${name.replace(/[^\w\u4e00-\u9fff]+/g, "_")}`;
+      const el = $(gridId);
+      if (el) {
+        el.innerHTML = rows.map((q, i) => renderQuestionItem(q, query, i + 1)).join("");
+        bindQuestionItems(el, rows);
+      }
     });
-  });
+    return;
+  }
+
+  $("bankListView").innerHTML = list.map((q, i) => renderQuestionItem(q, query, i + 1)).join("");
+  bindQuestionItems($("bankListView"), list);
 }
 
 function relatedPostsForJob(job) {
@@ -682,7 +847,7 @@ function jobDescBadge(job) {
 function filteredJobs() {
   const search = $("searchQ").value.trim().toLowerCase();
   const list = currentJobs.filter((j) => {
-    if (activeCompany && j.company !== activeCompany) return false;
+    if (!matchesCompanyLabel(j.company)) return false;
     if (!search) return true;
     const hay = [
       j.title,
@@ -717,10 +882,13 @@ function renderJobsView() {
   const list = filteredJobs();
   const total = currentJobs.length;
   const searching = query.length > 0 || activeCompany;
+  syncSourceFilterBar();
 
   $("clearSearch").hidden = !query;
   $("feedGrid").hidden = true;
+  $("feedSections").hidden = true;
   $("bankListView").hidden = true;
+  $("bankSections").hidden = true;
   $("jobsListView").hidden = list.length === 0 && !jobsLoading;
   $("feedEmpty").hidden = list.length > 0 || total > 0 || jobsLoading;
   $("feedHint").hidden = searching || total > 0 || jobsLoading || jobsLoadError;
@@ -904,10 +1072,11 @@ async function loadXhsStatus() {
   try {
     const s = await getJson("/api/xhs/status");
     const parts = [];
-    parts.push(s.cookie_configured ? "Cookie 已配置" : "Cookie 未配置（.env XHS_WEB_SESSION）");
+    parts.push(s.cookie_configured ? `Cookie 已配置（${s.cookie_source || "env"}）` : "Cookie 未配置（CDP Chrome 或 XHS_COOKIES）");
     parts.push(`本地 JSON ${s.export_files || 0} 个`);
     if (s.latest_export_at) parts.push(`最新 ${s.latest_export_at.replace("T", " ").replace("+00:00", " UTC")}`);
-    if (!s.mediacrawler_installed) parts.push("MediaCrawler 未安装");
+    if (!s.spider_xhs_installed) parts.push("Spider_XHS 未安装");
+    if (s.spider_xhs_installed && !s.node_modules_ready) parts.push("需 npm install");
     el.textContent = parts.join(" · ");
     el.classList.toggle("warn", !s.cookie_configured);
   } catch {
@@ -920,22 +1089,87 @@ async function runXhsScrapeSafe() {
   const btn = $("submitXhsScrape");
   if (!btn) return;
   btn.disabled = true;
-  $("xhsStatus").textContent = "正在抓取…（MediaCrawler，可能数分钟，勿关页面）";
+  $("xhsStatus").textContent = "正在抓取…";
   try {
     const data = await postJson("/api/xhs/scrape-safe", {
       role_id: selectedRoleId,
       companies: parseCompanies($("companies").value),
+      core_only: $("xhsCoreOnly")?.checked ?? true,
       batch_size: 2,
-      pause_seconds: 60,
+      pause_seconds: 25,
     });
-    const kw = (data.keywords || []).join("、");
-    $("xhsStatus").textContent = `抓取完成 ${data.keywords?.length || 0} 个词：${kw}`;
+    const kw = (data.keywords || []).slice(0, 6).join("、");
+    $("xhsStatus").textContent = `JSON 已更新 ${data.keywords?.length || 0} 词：${kw}${(data.keywords?.length || 0) > 6 ? "…" : ""}`;
     await loadXhsStatus();
   } catch (err) {
-    $("xhsStatus").textContent = err.message || err.error || "小红书抓取失败";
+    $("xhsStatus").textContent = err.message || err.error || "抓取失败";
     $("xhsStatus").classList.add("warn");
   } finally {
     btn.disabled = false;
+  }
+}
+
+function formatClassifySummary(classify) {
+  if (!classify || typeof classify !== "object") return "";
+  const parts = [];
+  if (classify.xiaohongshu_export?.post_count != null) {
+    parts.push(`导入 ${classify.xiaohongshu_export.post_count}`);
+  }
+  if (classify.kept != null) parts.push(`入库 ${classify.kept}`);
+  for (const [k, v] of Object.entries(classify)) {
+    if (k.endsWith("_dropped") && v) parts.push(`${k.replace("_dropped", "")}-${v}`);
+  }
+  if (classify.xhs_role_matched != null) parts.push(`岗位匹配 ${classify.xhs_role_matched}`);
+  return parts.join(" · ");
+}
+
+async function runXhsIncremental() {
+  const btn = $("submitXhsIncremental");
+  if (!btn) return;
+  btn.disabled = true;
+  setLoading(true, "抓取 + 分类入库…");
+  try {
+    const body = {
+      ...payloadBase(),
+      core_only: $("xhsCoreOnly")?.checked ?? true,
+      xhs_live: false,
+      refresh: true,
+      discover_nowcoder: false,
+    };
+    const data = await postJson("/api/xhs/incremental", body);
+    if (data.slug) {
+      showBundle({
+        slug: data.slug,
+        bank: data.bank || {},
+        posts: data.posts || [],
+        companies: data.companies || [],
+      });
+      await refreshBankList();
+    }
+    const summary = formatClassifySummary(data.classify);
+    $("xhsStatus").textContent = [
+      data.post_count != null ? `${data.post_count} 篇面经` : "",
+      data.question_count != null ? `${data.question_count} 题` : "",
+      summary,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    $("status").textContent = $("xhsStatus").textContent;
+    if ((data.ingest_warnings || []).length) {
+      $("status").textContent += ` · ${data.ingest_warnings[0]}`;
+    }
+    if (data.xhs?.error) {
+      $("xhsStatus").textContent += ` · 抓取: ${data.xhs.error.slice(0, 80)}`;
+      $("xhsStatus").classList.add("warn");
+    }
+    closeDrawer();
+  } catch (err) {
+    $("xhsStatus").textContent = err.message || err.error || "失败";
+    $("xhsStatus").classList.add("warn");
+  } finally {
+    btn.disabled = false;
+    setLoading(false);
+    await loadXhsStatus();
   }
 }
 
@@ -947,6 +1181,7 @@ async function runFetchJobs() {
   if (viewMode === "jobs") renderJobsView();
   try {
     const body = {
+      role_ids: focusRoleIds,
       role_id: selectedRoleId,
       role: $("role").value.trim(),
       companies: parseCompanies($("companies").value),
@@ -955,6 +1190,7 @@ async function runFetchJobs() {
       boss_cdp: $("jobProBoss").checked,
       job_pro_scope: $("jobProScope").value,
       job_pro_details: $("jobProDetails").checked,
+      job_recency_days: RECENCY_WINDOW_DAYS,
       skip_interview_discover: true,
     };
     const data = await postJson("/api/jobs/fetch", body);
@@ -983,20 +1219,48 @@ async function runFetchJobs() {
 }
 
 function openQuestionModal(q) {
+  const related = (q.related_posts || []).length
+    ? q.related_posts
+    : (q.source_refs || [])
+        .map((url) => currentPosts.find((p) => p.url === url || p.source_url === url))
+        .filter(Boolean)
+        .slice(0, 6)
+        .map((p) => ({
+          url: p.source_url || p.url,
+          title: p.title || "面经原文",
+          source: p.source,
+          company_label: p.company_label || p.company || "",
+          posted_at: p.posted_at || "",
+        }));
+  const relatedHtml = related.length
+    ? `<div class="question-related"><h3>来源面经</h3><ul>${related
+        .map((p) => {
+          const src = sourceLabel(p.url || p.source, p.source);
+          return `<li><span class="pill ${src.cls}">${src.name}</span> <strong>${escapeHtml(p.company_label || "")}</strong> ${escapeHtml(p.title || "")}${p.url ? ` <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">原文</a>` : ""}</li>`;
+        })
+        .join("")}</ul></div>`
+    : "";
+  const srcLine = (q.source_labels || []).length
+    ? `<dt>来源</dt><dd>${escapeHtml(q.source_labels.join("、"))}</dd>`
+    : "";
   $("modalBody").innerHTML = `
     <div class="modal-head">
       <span class="pill">#${q.rank}</span>
+      <span class="pill conf-${escapeHtml(q.confidence || "低频")}">${escapeHtml(q.confidence || "低频")}</span>
       <span class="pill">出现 ${q.batch_count ?? q.freq ?? 1} 次</span>
-      <span class="pill topic">${escapeHtml(q.topic || "")}</span>
+      <span class="pill topic">${escapeHtml(q.topic || "综合")}</span>
     </div>
     <h2>${escapeHtml(q.text)}</h2>
+    ${q.answer ? `<div class="question-answer"><h3>参考解答</h3><div class="answer-body">${escapeHtml(q.answer).replace(/\n/g, "<br>")}</div></div>` : ""}
     ${(q.variants || []).length ? `<p class="cluster-variants"><strong>同类表述：</strong>${escapeHtml(q.variants.join("；"))}</p>` : ""}
     <dl class="modal-dl">
       <dt>公司</dt><dd>${escapeHtml((q.company_tags || []).join("、") || "未标注")}</dd>
       <dt>岗位</dt><dd>${escapeHtml((q.role_tags || []).join("、") || "未标注")}</dd>
+      ${srcLine}
       <dt>最近出现</dt><dd>${escapeHtml(q.latest_posted_at || "—")}</dd>
       ${q.score != null ? `<dt>综合分</dt><dd>${q.score}</dd>` : ""}
     </dl>
+    ${relatedHtml}
   `;
   $("cardModal").hidden = false;
 }
@@ -1021,6 +1285,23 @@ function renderCurrentView() {
   else renderFeed();
 }
 
+function syncSourceFilterBar() {
+  const bar = $("sourceFilterBar");
+  if (!bar) return;
+  const show = viewMode === "posts" && currentPosts.length > 0;
+  bar.hidden = !show;
+  bar.querySelectorAll(".source-chip").forEach((btn) => {
+    const on = btn.dataset.source === activeSource;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
+function sourceCounts(list) {
+  const { xhs, nc, other } = postsBySource(list);
+  return { xhs: xhs.length, nc: nc.length, other: other.length, all: list.length };
+}
+
 function renderFeed() {
   if (viewMode === "bank") {
     renderBankView();
@@ -1029,13 +1310,25 @@ function renderFeed() {
   const query = $("searchQ").value.trim();
   const list = filteredPosts();
   const total = currentPosts.length;
-  const searching = query.length > 0 || activeCompany;
+  const searching = query.length > 0 || activeCompany || activeSource !== "all";
+  const counts = sourceCounts(
+    currentPosts.filter((p) => matchesCompanyLabel(p.company_label) && (
+      !query
+      || [p.title, p.preview, p.raw_text, p.company_label, p.role_label, p.source].join(" ").toLowerCase().includes(query.toLowerCase())
+    )),
+  );
 
   $("clearSearch").hidden = !query;
   $("feedHint").hidden = searching || total > 0;
   $("feedEmpty").hidden = list.length > 0 || total === 0;
-  $("feedGrid").hidden = list.length === 0;
+  syncSourceFilterBar();
+
+  const useSections = activeSource === "all" && list.length > 0;
+  $("feedGrid").hidden = useSections || list.length === 0;
+  $("feedSections").hidden = !useSections;
+
   $("bankListView").hidden = true;
+  $("bankSections").hidden = true;
   $("jobsListView").hidden = true;
 
   if (currentBank || total > 0) {
@@ -1044,22 +1337,49 @@ function renderFeed() {
     const win = currentBank?.recency_window_days || RECENCY_WINDOW_DAYS;
     const cacheAt = currentBank?.cache_updated_at || currentBank?.generated_at || "";
     const cacheHint = cacheAt ? ` · 缓存 ${String(cacheAt).slice(0, 19).replace("T", " ")}` : "";
+    const srcHint = ` · 小红书 ${counts.xhs} · 牛客 ${counts.nc}`;
     $("bankSubtitle").textContent =
-      `${list.length} / ${total} 篇面经${mergedBankCount > 1 ? ` · 合并 ${mergedBankCount} 个库` : ""} · 近 ${win} 天${cacheHint}`;
+      `${list.length} / ${total} 篇面经${mergedBankCount > 1 ? ` · 合并 ${mergedBankCount} 个库` : ""}${srcHint} · 近 ${win} 天${cacheHint}`;
   }
 
-  $("feedGrid").innerHTML = list.map((p, i) => renderPostCard(p, i, query)).join("");
-  $("feedGrid").querySelectorAll(".post-card").forEach((el) => {
-    const idx = Number(el.dataset.index);
-    const open = () => openPostModal(list[idx]);
-    el.addEventListener("click", open);
-    el.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        open();
-      }
-    });
+  $("sourceFilter")?.querySelectorAll(".source-chip").forEach((btn) => {
+    const src = btn.dataset.source;
+    let label = btn.textContent.split(" ")[0];
+    if (src === "all") label = `全部 ${counts.all}`;
+    else if (src === "xiaohongshu") label = `小红书 ${counts.xhs}`;
+    else if (src === "nowcoder") label = `牛客 ${counts.nc}`;
+    btn.textContent = label;
   });
+
+  if (useSections) {
+    const { xhs, nc, other } = postsBySource(list);
+    const sections = [
+      { key: "xiaohongshu", title: "小红书", cls: "src-xhs", posts: xhs },
+      { key: "nowcoder", title: "牛客", cls: "src-nc", posts: nc },
+    ];
+    if (other.length) {
+      sections.push({ key: "other", title: "其他", cls: "src-default", posts: other });
+    }
+    $("feedSections").innerHTML = sections
+      .filter((s) => s.posts.length)
+      .map((s) => {
+        const gridId = `feed-grid-${s.key}`;
+        return `<section class="feed-source-section" aria-label="${escapeHtml(s.title)}面经">
+          <div class="feed-section-head">
+            <h2 class="feed-section-title"><span class="section-src ${s.cls}">${escapeHtml(s.title)}</span><span class="section-count">${s.posts.length} 篇</span></h2>
+          </div>
+          <div id="${gridId}" class="feed-grid feed-grid-section" role="list"></div>
+        </section>`;
+      })
+      .join("");
+    sections.filter((s) => s.posts.length).forEach((s) => {
+      const grid = $(`feed-grid-${s.key}`);
+      if (grid) renderPostGrid(grid, s.posts, query);
+    });
+    return;
+  }
+
+  renderPostGrid($("feedGrid"), list, query);
 }
 
 function openPostModal(post) {
@@ -1114,11 +1434,19 @@ function showBundle(data) {
   }
   currentPosts = data.posts || [];
   currentClusters = (data.bank && data.bank.clusters) || [];
-  currentBankQuestions = normalizeBankQuestions(data.bank?.questions || []);
+  const bankUi = data.question_bank_ui || {};
+  currentBankQuestions = normalizeBankQuestions(
+    bankUi.questions?.length ? bankUi.questions : data.bank?.questions || [],
+  );
+  bankTopics = bankUi.topics || [];
+  bankUiStats = bankUi.stats || null;
   currentCompanies = data.companies || [];
   currentSlug = data.slug || null;
   frequencyReportText = data.frequency_report || "";
   activeCompany = "";
+  activeSource = "all";
+  activeTopic = "all";
+  activeConfidence = "all";
   const warnings = [...(data.ingest_warnings || [])];
   const srcWarn = data.sources?.role_mismatch_warning;
   if (srcWarn && !warnings.includes(srcWarn)) warnings.push(srcWarn);
@@ -1263,6 +1591,8 @@ async function runBuildBank() {
     if ((data.ingest_warnings || []).length) {
       $("status").textContent += ` · 注意：${data.ingest_warnings[0]}`;
     }
+    const cls = formatClassifySummary(data.sources);
+    if (cls) $("status").textContent += ` · ${cls}`;
     closeDrawer();
   } catch (err) {
     const detail = err.message || err.error || "失败";
@@ -1285,6 +1615,7 @@ function downloadBlob(filename, content, type) {
 
 $("submitBank").addEventListener("click", runBuildBank);
 $("submitXhsScrape")?.addEventListener("click", runXhsScrapeSafe);
+$("submitXhsIncremental")?.addEventListener("click", runXhsIncremental);
 $("submitJobs").addEventListener("click", runFetchJobs);
 $("fetchJobsInline").addEventListener("click", runFetchJobs);
 $("viewPosts").addEventListener("click", () => setViewMode("posts"));
@@ -1312,9 +1643,34 @@ $("clearSearch").addEventListener("click", () => {
 $("resetFilters").addEventListener("click", () => {
   $("searchQ").value = "";
   activeCompany = "";
+  activeSource = "all";
+  activeTopic = "all";
+  activeConfidence = "all";
   renderCompanyChips();
   syncCompaniesInput();
   renderCurrentView();
+});
+$("sourceFilter")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".source-chip");
+  if (!btn) return;
+  activeSource = btn.dataset.source || "all";
+  syncSourceFilterBar();
+  renderCurrentView();
+});
+$("bankFilterBar")?.addEventListener("click", (e) => {
+  const topicBtn = e.target.closest(".bank-topic-chip");
+  if (topicBtn) {
+    activeTopic = topicBtn.dataset.topic || "all";
+    syncBankFilterBar();
+    renderCurrentView();
+    return;
+  }
+  const confBtn = e.target.closest(".bank-conf-chip");
+  if (confBtn) {
+    activeConfidence = confBtn.dataset.confidence || "all";
+    syncBankFilterBar();
+    renderCurrentView();
+  }
 });
 $("exportJson").addEventListener("click", () => {
   if (!currentPosts.length) return;
@@ -1355,13 +1711,18 @@ async function boot() {
   try {
     const data = await getJson("/api/roles");
     techRoles = data.roles || [];
+    if (data.focus_role_ids?.length) focusRoleIds = data.focus_role_ids.map(canonicalRoleId);
     if (data.default_role_id) selectedRoleId = canonicalRoleId(data.default_role_id);
+    applyFocusRoleFilter();
     renderRoleChips($("roleChipRow"), selectRole);
     renderRoleChips($("roleChipRowDrawer"), selectRole);
     const current = techRoles.find((r) => r.id === selectedRoleId);
     if (current) $("role").value = current.search_as;
   } catch {
-    /* keep defaults */
+    techRoles = [...FOCUS_ROLE_FALLBACK];
+    applyFocusRoleFilter();
+    renderRoleChips($("roleChipRow"), selectRole);
+    renderRoleChips($("roleChipRowDrawer"), selectRole);
   }
   try {
     const coData = await getJson("/api/companies");
