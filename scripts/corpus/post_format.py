@@ -104,6 +104,38 @@ def format_body_html(text: str, *, title: str = "") -> str:
     return "\n".join(parts)
 
 
+def _xhs_note_id_from_url(url: str) -> str:
+    """Extract note_id from XHS URL: /explore/<note_id> or /discovery/item/<note_id>."""
+    import re
+    m = re.search(r"/(?:explore|discovery/item)/([a-f0-9]{24})", url or "")
+    return m.group(1) if m else ""
+
+
+def _local_assets_for_xhs_note(url: str) -> list[str]:
+    """Find downloaded XHS images in corpus_cache/xhs/assets/<note_id>/."""
+    from pathlib import Path
+    from scripts.config import package_root
+
+    note_id = _xhs_note_id_from_url(url)
+    if not note_id:
+        return []
+    found: list[str] = []
+    for root in (Path.cwd(), package_root()):
+        folder = root / "corpus_cache" / "xhs" / "assets" / note_id
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*")):
+            if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"} and path.is_file():
+                try:
+                    rel = path.relative_to(root)
+                    found.append(str(rel).replace("\\", "/"))
+                except ValueError:
+                    continue
+        if found:
+            return found
+    return []
+
+
 def _local_assets_for_post_url(url: str) -> list[str]:
     """Find downloaded images in corpus_cache/assets/posts/<hash>/."""
     import hashlib
@@ -143,6 +175,17 @@ def collect_image_urls(post_dict: dict) -> list[str]:
         seen.add(u)
         urls.append(u)
 
+    post_url = str(post_dict.get("url") or "").strip()
+    source = str(post_dict.get("source") or "").lower()
+
+    # For XHS posts: prefer locally cached images over expiring CDN URLs
+    if source == "xiaohongshu" and post_url:
+        local = _local_assets_for_xhs_note(post_url)
+        if local:
+            for rel in local:
+                _add(rel)
+            return urls
+
     for raw in post_dict.get("asset_paths") or []:
         u = str(raw).strip()
         if not u:
@@ -155,8 +198,8 @@ def collect_image_urls(post_dict: dict) -> list[str]:
         u = str(raw).strip()
         if _HTTP_URL.match(u):
             _add(u)
-    if not urls and post_dict.get("url"):
-        for rel in _local_assets_for_post_url(str(post_dict.get("url") or "")):
+    if not urls and post_url:
+        for rel in _local_assets_for_post_url(post_url):
             _add(rel)
     return urls
 

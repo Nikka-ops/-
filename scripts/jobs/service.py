@@ -1,13 +1,13 @@
 """Orchestrate multi-source JD fetch."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-from scripts.config import banks_dir
+from scripts.config import banks_dir, focus_role_ids, job_recency_days
 from scripts.corpus.bank_cache import banks_matching_role, load_cached_raw_posts
-from scripts.corpus.classify import classify_search_queries
 from scripts.corpus.tech_roles import canonical_role_id, get_tech_role, resolve_role_label
 from scripts.jobs.interview_link import attach_interview_context
+from scripts.jobs.queries import build_job_search_queries
 from scripts.jobs.connectors.registry import (
     build_connector,
     list_job_sources,
@@ -16,6 +16,7 @@ from scripts.jobs.connectors.registry import (
 )
 from scripts.jobs.connectors.job_pro import resolve_job_pro_keys
 from scripts.jobs.enrich import enrich_job_description, enrich_jobs_descriptions
+from scripts.jobs.role_filter import filter_jobs_by_focus_roles
 from scripts.jobs.posted_at import (
     backfill_bytedance_posted_at,
     filter_official_jobs_by_recency,
@@ -44,7 +45,7 @@ class JobFetchConfig:
     use_job_pro: bool = True
     job_pro_scope: str = "social"
     job_pro_details: bool = True
-    job_recency_days: int = 60
+    job_recency_days: int = 0
     boss_cdp: bool = False
     skip_interview_discover: bool = True
     cache_dir: str = ""
@@ -64,15 +65,21 @@ _DEFAULT_JOB_PRO_KEYS = [
     "bilibili",
     "xiaohongshu",
     "huawei",
+    "xiaomi",
     "ant",
     "ctrip",
     "weibo",
     "iflytek",
     "sensetime",
+    "oppo",
+    "vivo",
     "nio",
     "xpeng",
     "byd",
 ]
+
+# 直连官网连接器 ID（不经过 job-pro）
+_DIRECT_CONNECTOR_IDS = {"bytedance", "tencent", "meituan", "netease", "xiaomi", "kuaishou"}
 
 _DEFAULT_JOB_CITIES = ["北京", "上海", "深圳", "杭州", "广州", "成都"]
 
@@ -103,13 +110,13 @@ def _build_queries(config: JobFetchConfig, role_label: str) -> list[str]:
     if config.keywords:
         return [q.strip() for q in config.keywords if q and q.strip()]
 
-    scrape_queries = classify_search_queries(
-        roles=[role_label],
-        companies=config.companies or None,
-        role_id=config.role_id or None,
-    )
-    if scrape_queries:
-        return scrape_queries
+    rid = canonical_role_id(config.role_id) or (config.role_id or "").strip()
+    if rid:
+        return build_job_search_queries(
+            rid,
+            role_label=role_label,
+            companies=config.companies or None,
+        )
 
     queries: list[str] = []
     seen: set[str] = set()
@@ -121,12 +128,11 @@ def _build_queries(config: JobFetchConfig, role_label: str) -> list[str]:
             queries.append(text)
 
     add(role_label)
-    if config.role_id:
-        preset = get_tech_role(config.role_id)
-        if preset:
-            add(preset.search_as)
-            for kw in preset.keywords:
-                add(kw)
+    preset = get_tech_role(config.role_id) if config.role_id else None
+    if preset:
+        add(preset.search_as)
+        for kw in preset.keywords:
+            add(kw)
     for company in config.companies:
         add(f"{company} {role_label}")
     return queries
@@ -218,20 +224,26 @@ def fetch_jobs(config: JobFetchConfig, jobs_root) -> JobFetchResult:
         seen_keys.add(key)
         deduped.append(job)
 
+    focus_ids = [canonical_role_id(config.role_id) or config.role_id] if config.role_id else focus_role_ids()
+
     job_pro_count = sum(1 for j in deduped if "job_pro" in (j.source or ""))
     enrich_cap = min(len(deduped), max(job_pro_count, 200)) if config.job_pro_details else 0
     enrich_jobs_descriptions(
         deduped,
         max_enrich=enrich_cap,
-        skip_boss_bulk=True,
+        skip_boss_bulk=False,
     )
+
+    deduped, role_filter_meta = filter_jobs_by_focus_roles(deduped, focus_ids)
+    sources_meta["role_filter"] = role_filter_meta
 
     backfilled = backfill_bytedance_posted_at(deduped, queries, max_per_query=config.max_per_query)
     recency_meta: dict = {}
-    if config.job_recency_days > 0:
+    window_days = config.job_recency_days or job_recency_days()
+    if window_days > 0:
         deduped, recency_meta = filter_official_jobs_by_recency(
             deduped,
-            window_days=config.job_recency_days,
+            window_days=window_days,
         )
     deduped = sort_jobs_by_posted_at(deduped)
 
@@ -299,6 +311,61 @@ def fetch_jobs(config: JobFetchConfig, jobs_root) -> JobFetchResult:
         },
         warnings=warnings,
         jobs=[j.to_dict() for j in deduped],
+    )
+
+
+def fetch_jobs_multi(
+    base: JobFetchConfig,
+    role_ids: list[str],
+    jobs_root,
+) -> JobFetchResult:
+    """Fetch JD for one or more preset roles; merge and dedupe job rows."""
+    ids = [canonical_role_id(rid) or rid for rid in role_ids if (rid or "").strip()]
+    if not ids:
+        return fetch_jobs(base, jobs_root)
+    if len(ids) == 1:
+        return fetch_jobs(replace(base, role_id=ids[0], role=""), jobs_root)
+
+    merged_jobs: list[dict] = []
+    seen_keys: set[str] = set()
+    warnings: list[str] = []
+    sources_meta: dict[str, dict] = {}
+    slugs: list[str] = []
+    paths: dict[str, str] = {}
+    total_new = 0
+
+    for rid in ids:
+        result = fetch_jobs(replace(base, role_id=rid, role=""), jobs_root)
+        slugs.append(result.slug)
+        paths[rid] = result.paths.get("jobs", "")
+        total_new += result.new_count
+        for w in result.warnings:
+            if w not in warnings:
+                warnings.append(w)
+        for cid, meta in result.sources.items():
+            if cid not in sources_meta:
+                sources_meta[cid] = dict(meta)
+            else:
+                prev = sources_meta[cid]
+                prev["count"] = int(prev.get("count") or 0) + int(meta.get("count") or 0)
+        for job in result.jobs:
+            key = f"{job.get('company')}|{job.get('title')}|{job.get('city') or ''}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            merged_jobs.append(job)
+
+    if len(ids) > 1:
+        warnings.insert(0, f"已合并 {len(ids)} 个岗位 JD：{', '.join(ids)}")
+
+    return JobFetchResult(
+        slug=slugs[0] if slugs else "",
+        job_count=len(merged_jobs),
+        new_count=total_new,
+        paths={"jobs": paths.get(ids[0], ""), "slugs": slugs, "by_role": paths},
+        sources=sources_meta,
+        warnings=warnings,
+        jobs=merged_jobs,
     )
 
 

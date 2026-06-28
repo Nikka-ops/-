@@ -48,8 +48,8 @@ def _default_command() -> list[str]:
         return [env_bin]
     npx = shutil.which("npx")
     if npx:
-        return [npx, "-y", "job-pro@1.1.0"]
-    return ["npx", "-y", "job-pro@1.1.0"]
+        return [npx, "-y", "job-pro"]
+    return ["npx", "-y", "job-pro"]
 
 
 def _run_job_pro(
@@ -67,6 +67,8 @@ def _run_job_pro(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )
