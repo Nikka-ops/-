@@ -107,6 +107,10 @@ def list_snapshots(root: Path) -> list[dict]:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
+        # 只返回目录名与 slug 一致的快照（防止 GBK/UTF-8 乱码目录混入）
+        slug_in_meta = str(meta.get("slug") or "").strip()
+        if slug_in_meta and child.name != slug_in_meta:
+            continue
         rows.append(meta)
     rows.sort(key=lambda m: m.get("fetched_at") or "", reverse=True)
     return rows

@@ -381,16 +381,14 @@ function pickJobsSnapshot(snaps, roleId, roleLabel, companies = []) {
 
   let candidates = pool;
   if (companiesNorm.length) {
+    // 有指定公司：优先选包含这些公司的快照
     const withCo = pool.filter((s) => {
       const snapCos = (s.companies || []).map(normRole);
       return companiesNorm.some((c) => snapCos.includes(c));
     });
     if (withCo.length) candidates = withCo;
-    else candidates = pool;
-  } else {
-    const roleOnly = pool.filter((s) => !((s.companies || []).length));
-    if (roleOnly.length) candidates = roleOnly;
   }
+  // 无公司筛选时：直接取最新快照（不再强制要求无公司快照，避免选到旧/损坏快照）
 
   candidates.sort((a, b) => String(b.fetched_at || "").localeCompare(String(a.fetched_at || "")));
   return candidates[0] || null;
