@@ -341,13 +341,32 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
     if method == "GET" and route == "/api/jobs/sources":
         return 200, {"sources": catalog_job_sources()}
 
+    if method == "GET" and route == "/api/jobs/tech-stack":
+        from scripts.jobs.tech_stack import analyse_tech_stack
+        from scripts.jobs.service import list_job_snapshots, get_job_snapshot
+        cache_root = jobs_dir()
+        snaps = list_job_snapshots(cache_root)
+        # collect jobs from latest data + ai_app snapshots
+        all_jobs: list[dict] = []
+        loaded: set[str] = set()
+        for role_id in ("data", "ai_app"):
+            for s in snaps:
+                if s.get("role_id") == role_id and s.get("slug") not in loaded:
+                    bundle = get_job_snapshot(cache_root, s["slug"])
+                    if bundle:
+                        all_jobs.extend(bundle.get("jobs") or [])
+                        loaded.add(s["slug"])
+                    break
+        result = analyse_tech_stack(all_jobs)
+        return 200, result
+
     if method == "GET" and route == "/api/jobs":
         cache_root = jobs_dir()
         return 200, {"snapshots": list_job_snapshots(cache_root), "cache_dir": str(cache_root)}
 
     if method == "GET" and route.startswith("/api/jobs/"):
         slug = unquote(route[len("/api/jobs/") :].strip("/"))
-        if not slug or "/" in slug or slug == "sources":
+        if not slug or "/" in slug or slug in ("sources", "tech-stack"):
             return 400, {"error": "invalid_slug"}
         bundle = get_job_snapshot(jobs_dir(), slug)
         if bundle is None:
