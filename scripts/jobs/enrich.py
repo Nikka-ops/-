@@ -24,16 +24,29 @@ def _apply_job_pro_detail(job: JobPosting, detail: dict) -> bool:
     return bool(job.description.strip())
 
 
+# 薄包装连接器的 source 标签 → 对应 job-pro company key
+_WRAPPER_SOURCE_TO_KEY: dict[str, str] = {
+    "meituan":  "meituan",
+    "netease":  "netease",
+    "xiaomi":   "xiaomi",
+    "kuaishou": "kuaishou",
+}
+
+
 def enrich_job_pro_description(job: JobPosting) -> bool:
     if (job.description or "").strip():
         return False
-    if not job.source.startswith("job_pro"):
-        return False
+    src = job.source or ""
     company_key = str((job.extra or {}).get("job_pro_key") or "")
     if not company_key:
-        parts = job.source.split(":")
-        company_key = parts[-1] if len(parts) > 1 else ""
-    if not company_key or not job.source_id:
+        if src.startswith("job_pro"):
+            parts = src.split(":")
+            company_key = parts[-1] if len(parts) > 1 else ""
+        elif src in _WRAPPER_SOURCE_TO_KEY:
+            company_key = _WRAPPER_SOURCE_TO_KEY[src]
+    if not company_key or not src.startswith("job_pro") and src not in _WRAPPER_SOURCE_TO_KEY:
+        return False
+    if not job.source_id:
         return False
     from scripts.jobs.connectors.job_pro import JobProConnector
 
@@ -85,7 +98,7 @@ def enrich_job_description(job: JobPosting, *, boss_port: int | None = None) -> 
     """补全单条岗位正文，返回是否新写入 description。"""
     if (job.description or "").strip():
         return False
-    if job.source.startswith("job_pro"):
+    if job.source.startswith("job_pro") or job.source in _WRAPPER_SOURCE_TO_KEY:
         return enrich_job_pro_description(job)
     if job.source in ("boss_cdp", "boss_zhipin"):
         return enrich_boss_description(job, port=boss_port)
@@ -108,7 +121,7 @@ def enrich_jobs_descriptions(
             break
         if (job.description or "").strip():
             continue
-        if job.source.startswith("job_pro"):
+        if job.source.startswith("job_pro") or job.source in _WRAPPER_SOURCE_TO_KEY:
             if enrich_job_pro_description(job):
                 enriched += 1
         elif job.source in ("boss_cdp", "boss_zhipin"):
