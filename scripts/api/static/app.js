@@ -26,6 +26,7 @@ let currentJobs = [];
 let jobsMeta = null;
 let jobsLoading = false;
 let jobsLoadError = "";
+let activeJobType = "all"; // "all" | "full" | "intern"
 let companyGroups = [];
 
 const RECENCY_WINDOW_DAYS = 90;
@@ -760,6 +761,7 @@ function renderBankView() {
   $("bankSections").hidden = !useSections;
   $("jobsListView").hidden = true;
   $("techStackPanel").hidden = true;
+  $("jobTypeBar").hidden = true;
   $("feedEmpty").hidden = list.length > 0 || total === 0;
   $("feedHint").hidden = query.length > 0 || activeCompany || activeTopic !== "all" || activeConfidence !== "all" || total > 0;
 
@@ -843,10 +845,19 @@ function jobDescBadge(job) {
   return `<span class="pill muted-pill">无JD正文</span>`;
 }
 
+function isInternJob(job) {
+  const title = (job.title || "").toLowerCase();
+  const tags  = (job.tags || []).map(t => String(t).toLowerCase());
+  return title.includes("实习") || title.includes("intern")
+    || tags.some(t => t === "intern" || t === "实习" || t.includes("intern"));
+}
+
 function filteredJobs() {
   const search = $("searchQ").value.trim().toLowerCase();
   const list = currentJobs.filter((j) => {
     if (!matchesCompanyLabel(j.company)) return false;
+    if (activeJobType === "intern" && !isInternJob(j)) return false;
+    if (activeJobType === "full"   &&  isInternJob(j)) return false;
     if (!search) return true;
     const hay = [
       j.title,
@@ -891,6 +902,18 @@ function renderJobsView() {
   // tech stack panel: show when jobs are loaded, load data lazily
   if (total > 0 && !techStackData && !techStackLoading) loadTechStack();
   $("techStackPanel").hidden = total === 0 || techStackLoading;
+
+  // job type bar
+  const internCount = currentJobs.filter(isInternJob).length;
+  const fullCount   = total - internCount;
+  $("jobTypeBar").hidden = total === 0;
+  $("jobCountAll").textContent    = total;
+  $("jobCountFull").textContent   = fullCount;
+  $("jobCountIntern").textContent = internCount;
+  $("jobTypeBar").querySelectorAll(".job-type-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.type === activeJobType);
+  });
+
   $("jobsListView").hidden = list.length === 0 && !jobsLoading;
   $("feedEmpty").hidden = list.length > 0 || total > 0 || jobsLoading;
   $("feedHint").hidden = searching || total > 0 || jobsLoading || jobsLoadError;
@@ -925,20 +948,21 @@ function renderJobsView() {
   $("jobsListView").innerHTML = list
     .map((j, i) => {
       const src = jobSourceLabel(j.source);
+      const intern = isInternJob(j);
       const descPreview = (j.description || "").replace(/\s+/g, " ").slice(0, 120);
       return `<li class="cluster-item job-item" data-index="${i}">
-        <div class="cluster-rank">${j.is_new ? '<span class="job-new">新</span>' : "JD"}</div>
+        <div class="cluster-rank">${j.is_new ? '<span class="job-new">新</span>' : intern ? '实习' : "JD"}</div>
         <div class="cluster-body">
           <div class="cluster-title">${highlightText(j.title, query)}</div>
           <div class="cluster-meta">
             <span class="pill company-pill">${escapeHtml(j.company || "")}</span>
+            ${intern ? `<span class="pill intern-pill">实习</span>` : ""}
             ${j.city ? `<span class="pill">${escapeHtml(j.city)}</span>` : ""}
             ${j.posted_at ? `<span class="pill">${escapeHtml(j.posted_at)}</span>` : ""}
             ${j.salary ? `<span class="pill salary-pill">${escapeHtml(j.salary)}</span>` : ""}
             <span class="pill src-pill ${src.cls}">${escapeHtml(src.name)}</span>
             ${jobInterviewBadge(j)}
             ${jobDescBadge(j)}
-            ${(j.tags || []).slice(0, 2).map((t) => `<span class="pill">${escapeHtml(t)}</span>`).join("")}
           </div>
           ${descPreview ? `<p class="cluster-variants">${highlightText(descPreview, query)}${(j.description || "").length > 120 ? "…" : ""}</p>` : ""}
         </div>
@@ -1332,6 +1356,7 @@ function renderFeed() {
   $("bankListView").hidden = true;
   $("bankSections").hidden = true;
   $("techStackPanel").hidden = true;
+  $("jobTypeBar").hidden = true;
   $("jobsListView").hidden = true;
 
   if (currentBank || total > 0) {
@@ -1702,6 +1727,14 @@ $("exportJobs").addEventListener("click", () => {
 $("toggleSettings").addEventListener("click", openDrawer);
 if ($("heroOpenSettings")) $("heroOpenSettings").addEventListener("click", openDrawer);
 if ($("heroFetchJobs"))    $("heroFetchJobs").addEventListener("click", runFetchJobs);
+
+// job type tabs
+$("jobTypeBar").addEventListener("click", (e) => {
+  const btn = e.target.closest(".job-type-btn");
+  if (!btn) return;
+  activeJobType = btn.dataset.type;
+  renderJobsView();
+});
 
 // ── Tech-stack analysis panel ────────────────────────────────────────────
 let techStackData = null;

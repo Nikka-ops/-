@@ -1350,3 +1350,59 @@ footer {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* ── Job type tabs ───────────────────────────── */
+.job-type-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  border-bottom: 1.5px solid var(--border);
+  padding-bottom: 0;
+}
+
+.job-type-btn {
+  border: none;
+  background: transparent;
+  padding: 8px 16px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1.5px;
+  transition: color var(--transition), border-color var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.job-type-btn:hover { color: var(--text); }
+.job-type-btn.active {
+  color: var(--indigo);
+  font-weight: 700;
+  border-bottom-color: var(--indigo);
+}
+.job-type-cnt {
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  min-width: 22px;
+  text-align: center;
+}
+.job-type-btn.active .job-type-cnt {
+  background: var(--indigo-soft);
+  border-color: var(--indigo-mid);
+  color: var(--indigo);
+}
+
+/* intern badge in job list */
+.pill.intern-pill {
+  background: #f5f3ff;
+  color: #7c3aed;
+  border-color: #ddd6fe;
+  font-weight: 600;
+}
