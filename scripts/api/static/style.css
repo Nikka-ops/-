@@ -369,15 +369,55 @@ body {
 /* Feed meta bar */
 .feed-meta {
   display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
+/* ── 主标签栏 ────────────────────────────── */
+.main-tab-bar {
+  display: flex;
+  border-bottom: 2px solid var(--border);
+  background: var(--surface);
+  padding: 0 16px;
+  gap: 0;
+}
+.main-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 22px;
+  border: none;
+  background: transparent;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.main-tab .tab-icon { font-size: 16px; }
+.main-tab:hover { color: var(--text); }
+.main-tab.active {
+  color: var(--indigo);
+  border-bottom-color: var(--indigo);
+  font-weight: 600;
+}
+
+/* 信息栏 + 操作区 */
+.meta-info-bar {
+  display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 10px;
+  padding: 12px 16px 8px;
 }
 .feed-meta h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.4px;
 }
@@ -393,35 +433,9 @@ body {
   align-items: center;
 }
 
-/* View toggle */
-.view-toggle {
-  display: inline-flex;
-  background: var(--surface-2);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  padding: 3px;
-  gap: 2px;
-}
-.view-btn {
-  border: none;
-  background: transparent;
-  padding: 5px 12px;
-  font-size: 12px;
-  font-family: var(--font);
-  font-weight: 500;
-  cursor: pointer;
-  color: var(--text-2);
-  border-radius: 7px;
-  transition: all var(--transition);
-  white-space: nowrap;
-}
-.view-btn:hover { color: var(--text); background: var(--border); }
-.view-btn.active {
-  background: var(--surface);
-  color: var(--indigo);
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
-}
+/* 旧 view-toggle（保留兼容） */
+.view-toggle { display: none; }
+.view-btn { display: none; }
 
 /* Buttons */
 button.primary {

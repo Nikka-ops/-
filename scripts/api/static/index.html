@@ -124,21 +124,29 @@
 
   <main class="feed-main">
     <div id="feedMeta" class="feed-meta" hidden>
-      <div class="meta-left">
-        <h1 id="bankTitle">面经库</h1>
-        <p id="bankSubtitle" class="subtitle"></p>
+      <div class="main-tab-bar" role="tablist">
+        <button type="button" id="viewPosts" class="main-tab active" role="tab">
+          <span class="tab-icon">📄</span>面经
+        </button>
+        <button type="button" id="viewBank" class="main-tab" role="tab">
+          <span class="tab-icon">📚</span>题库
+        </button>
+        <button type="button" id="viewJobs" class="main-tab" role="tab">
+          <span class="tab-icon">💼</span>在招岗位
+        </button>
       </div>
-      <div class="meta-actions">
-        <div class="view-toggle" role="tablist">
-          <button type="button" id="viewPosts" class="view-btn active" role="tab">面经</button>
-          <button type="button" id="viewBank" class="view-btn" role="tab">题库</button>
-          <button type="button" id="viewJobs" class="view-btn" role="tab">在招岗位</button>
+      <div class="meta-info-bar">
+        <div class="meta-left">
+          <h1 id="bankTitle">面经库</h1>
+          <p id="bankSubtitle" class="subtitle"></p>
         </div>
-        <button id="exportJson" type="button" class="ghost">导出面经 JSON</button>
-        <button id="exportBank" type="button" class="ghost">导出题库</button>
-        <button id="exportMd" type="button" class="ghost">频次报告</button>
-        <button id="exportJobs" type="button" class="ghost" hidden>导出岗位 JSON</button>
-        <button id="genPrepBtn" type="button" class="primary" hidden>✨ 生成备考包</button>
+        <div class="meta-actions">
+          <button id="exportJson" type="button" class="ghost">导出面经 JSON</button>
+          <button id="exportBank" type="button" class="ghost">导出题库</button>
+          <button id="exportMd" type="button" class="ghost">频次报告</button>
+          <button id="exportJobs" type="button" class="ghost" hidden>导出岗位 JSON</button>
+          <button id="genPrepBtn" type="button" class="primary" hidden>✨ 生成备考包</button>
+        </div>
       </div>
     </div>
 
