@@ -331,7 +331,7 @@ function showRolePending(role) {
   renderCompanyChips();
   $("feedHint").hidden = false;
   const heroDesc = $("feedHint").querySelector(".hero-desc");
-  if (heroDesc) heroDesc.innerHTML = `「${role.label}」暂无面经库 — 点 <strong>⚙ 构建面经库</strong> 联网抓取，或等待自动读取本地缓存`;
+  if (heroDesc) heroDesc.innerHTML = `「${role.label}」暂无面经库 — 点 <strong>构建面经库</strong> 联网抓取，或等待自动读取本地缓存`;
   const emptyP = $("feedEmpty").querySelector("p");
   if (emptyP) {
     emptyP.textContent = `「${role.label}」还没有已保存的面经库`;
@@ -937,7 +937,7 @@ function renderJobsView() {
   const fetchedAt = jobsMeta?.fetched_at || jobsMeta?.meta?.fetched_at || "";
   $("bankSubtitle").textContent = jobsLoading
     ? "正在拉取在招 JD…"
-    : `${list.length} / ${total} 个岗位 · ${newCount} 个新开 · 近2月官网JD · 按发布日期排序 · ${fetchedAt ? `更新于 ${fetchedAt.slice(0, 19).replace("T", " ")}` : "点击 ⚙ 拉取在招岗位"}`;
+    : `${list.length} / ${total} 个岗位 · ${newCount} 个新开 · 近2月官网JD · 按发布日期排序 · ${fetchedAt ? `更新于 ${fetchedAt.slice(0, 19).replace("T", " ")}` : "点击 拉取在招岗位"}`;
 
   if (!jobsLoading && total === 0) {
     const emptyP = $("feedEmpty").querySelector("p");
@@ -1030,7 +1030,7 @@ function renderJobModalBody(job) {
       ${job.posted_at ? `<dt>发布</dt><dd>${escapeHtml(job.posted_at)}</dd>` : ""}
     </dl>
     ${job.url && job.url.startsWith("http") ? `<p><a class="modal-link" href="${escapeHtml(job.url)}" target="_blank" rel="noopener">查看官网职位 ↗</a></p>` : ""}
-    ${desc ? `<div style="margin-top:12px"><button class="ghost" onclick="runJdAnalysis(${JSON.stringify(desc)})">📊 分析 JD 覆盖缺口</button></div>` : ""}
+    ${desc ? `<div style="margin-top:12px"><button class="ghost" onclick="runJdAnalysis(${JSON.stringify(desc)})">分析 JD 覆盖缺口</button></div>` : ""}
   `;
 }
 
@@ -1078,7 +1078,7 @@ async function loadLatestJobsSnapshot() {
       currentJobs = [];
       jobsMeta = null;
       if (viewMode === "jobs" && snaps.length) {
-        jobsLoadError = `「${roleLabel || "当前岗位"}」暂无在招岗位缓存，请点击 ⚙ 拉取`;
+        jobsLoadError = `「${roleLabel || "当前岗位"}」暂无在招岗位缓存，请点击 拉取`;
       }
       return;
     }
@@ -1755,7 +1755,7 @@ async function runGenPrep() {
     alert("备考包生成失败：" + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "✨ 生成备考包";
+    btn.textContent = "生成备考包";
   }
 }
 
@@ -1763,7 +1763,7 @@ function showPrepModal(pkg) {
   const hasChains = (pkg.followup_chains || []).length > 0;
   const hasMd = pkg.prep_md?.trim();
 
-  let html = `<h2 style="margin:0 0 16px">✨ ${pkg.role} 备考包</h2>`;
+  let html = `<h2 style="margin:0 0 16px">${pkg.role} · 备考包</h2>`;
 
   if (pkg.mode === "heuristic") {
     html += `<p class="hint warn-hint">未配置 DeepSeek API Key，仅展示题目列表（启发式模式）。</p>`;
@@ -1784,10 +1784,10 @@ function showPrepModal(pkg) {
   }
 
   if (hasChains) {
-    html += `<h3 style="margin:20px 0 10px">🔗 项目追问链</h3>`;
+    html += `<h3 style="margin:20px 0 10px">项目追问链</h3>`;
     for (const c of pkg.followup_chains) {
       html += `<div class="followup-card">
-        <div class="followup-anchor">📌 ${c.resume_anchor}</div>
+        <div class="followup-anchor">${c.resume_anchor}</div>
         <div class="followup-trigger">问：${c.seed_question}</div>
         <ul>${c.followups.map(f => `<li>${f}</li>`).join("")}</ul>
         ${c.is_grounded ? '<span class="pill grounded-pill">有据可查</span>' : ""}
@@ -1879,7 +1879,7 @@ function showJdAnalysisModal(result, jdText) {
   const gaps = result.gaps || [];
   const rec = result.recommendation || "";
 
-  let html = `<h2 style="margin:0 0 16px">📊 JD 覆盖分析</h2>`;
+  let html = `<h2 style="margin:0 0 16px">JD 覆盖分析</h2>`;
   if (rec) html += `<p style="margin-bottom:16px">${escapeHtml(rec)}</p>`;
 
   if (gaps.length) {
@@ -1996,7 +1996,7 @@ function renderTechStack() {
 
   panel.innerHTML = `
     <div class="ts-header">
-      <h2>📊 技术栈需求分析</h2>
+      <h2>技术栈需求分析</h2>
       <span class="ts-header-meta">基于 ${total_jobs} 个岗位 JD · 数据开发 + Agent 开发</span>
     </div>
     <div class="ts-grid">${cardsHtml}</div>
