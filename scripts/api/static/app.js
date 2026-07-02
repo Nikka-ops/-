@@ -26,6 +26,7 @@ let currentJobs = [];
 let jobsMeta = null;
 let jobsLoading = false;
 let jobsLoadError = "";
+let activeJobType = "all"; // "all" | "full" | "intern"
 let companyGroups = [];
 
 const RECENCY_WINDOW_DAYS = 90;
@@ -329,8 +330,8 @@ function showRolePending(role) {
   $("feedError").hidden = true;
   renderCompanyChips();
   $("feedHint").hidden = false;
-  $("feedHint").textContent =
-    `「${role.label}」暂无面经库 — 打开页会自动读本地缓存；点 ⚙「抓取并生成面经库」才会联网更新`;
+  const heroDesc = $("feedHint").querySelector(".hero-desc");
+  if (heroDesc) heroDesc.innerHTML = `「${role.label}」暂无面经库 — 点 <strong>⚙ 构建面经库</strong> 联网抓取，或等待自动读取本地缓存`;
   const emptyP = $("feedEmpty").querySelector("p");
   if (emptyP) {
     emptyP.textContent = `「${role.label}」还没有已保存的面经库`;
@@ -381,16 +382,14 @@ function pickJobsSnapshot(snaps, roleId, roleLabel, companies = []) {
 
   let candidates = pool;
   if (companiesNorm.length) {
+    // 有指定公司：优先选包含这些公司的快照
     const withCo = pool.filter((s) => {
       const snapCos = (s.companies || []).map(normRole);
       return companiesNorm.some((c) => snapCos.includes(c));
     });
     if (withCo.length) candidates = withCo;
-    else candidates = pool;
-  } else {
-    const roleOnly = pool.filter((s) => !((s.companies || []).length));
-    if (roleOnly.length) candidates = roleOnly;
   }
+  // 无公司筛选时：直接取最新快照（不再强制要求无公司快照，避免选到旧/损坏快照）
 
   candidates.sort((a, b) => String(b.fetched_at || "").localeCompare(String(a.fetched_at || "")));
   return candidates[0] || null;
@@ -761,6 +760,8 @@ function renderBankView() {
   $("bankListView").hidden = useSections || list.length === 0;
   $("bankSections").hidden = !useSections;
   $("jobsListView").hidden = true;
+  $("techStackPanel").hidden = true;
+  $("jobTypeBar").hidden = true;
   $("feedEmpty").hidden = list.length > 0 || total === 0;
   $("feedHint").hidden = query.length > 0 || activeCompany || activeTopic !== "all" || activeConfidence !== "all" || total > 0;
 
@@ -844,10 +845,19 @@ function jobDescBadge(job) {
   return `<span class="pill muted-pill">无JD正文</span>`;
 }
 
+function isInternJob(job) {
+  const title = (job.title || "").toLowerCase();
+  const tags  = (job.tags || []).map(t => String(t).toLowerCase());
+  return title.includes("实习") || title.includes("intern")
+    || tags.some(t => t === "intern" || t === "实习" || t.includes("intern"));
+}
+
 function filteredJobs() {
   const search = $("searchQ").value.trim().toLowerCase();
   const list = currentJobs.filter((j) => {
     if (!matchesCompanyLabel(j.company)) return false;
+    if (activeJobType === "intern" && !isInternJob(j)) return false;
+    if (activeJobType === "full"   &&  isInternJob(j)) return false;
     if (!search) return true;
     const hay = [
       j.title,
@@ -889,6 +899,21 @@ function renderJobsView() {
   $("feedSections").hidden = true;
   $("bankListView").hidden = true;
   $("bankSections").hidden = true;
+  // tech stack panel: show when jobs are loaded, load data lazily
+  if (total > 0 && !techStackData && !techStackLoading) loadTechStack();
+  $("techStackPanel").hidden = total === 0 || techStackLoading;
+
+  // job type bar
+  const internCount = currentJobs.filter(isInternJob).length;
+  const fullCount   = total - internCount;
+  $("jobTypeBar").hidden = total === 0;
+  $("jobCountAll").textContent    = total;
+  $("jobCountFull").textContent   = fullCount;
+  $("jobCountIntern").textContent = internCount;
+  $("jobTypeBar").querySelectorAll(".job-type-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.type === activeJobType);
+  });
+
   $("jobsListView").hidden = list.length === 0 && !jobsLoading;
   $("feedEmpty").hidden = list.length > 0 || total > 0 || jobsLoading;
   $("feedHint").hidden = searching || total > 0 || jobsLoading || jobsLoadError;
@@ -923,20 +948,21 @@ function renderJobsView() {
   $("jobsListView").innerHTML = list
     .map((j, i) => {
       const src = jobSourceLabel(j.source);
+      const intern = isInternJob(j);
       const descPreview = (j.description || "").replace(/\s+/g, " ").slice(0, 120);
       return `<li class="cluster-item job-item" data-index="${i}">
-        <div class="cluster-rank">${j.is_new ? '<span class="job-new">新</span>' : "JD"}</div>
+        <div class="cluster-rank">${j.is_new ? '<span class="job-new">新</span>' : intern ? '实习' : "JD"}</div>
         <div class="cluster-body">
           <div class="cluster-title">${highlightText(j.title, query)}</div>
           <div class="cluster-meta">
             <span class="pill company-pill">${escapeHtml(j.company || "")}</span>
+            ${intern ? `<span class="pill intern-pill">实习</span>` : ""}
             ${j.city ? `<span class="pill">${escapeHtml(j.city)}</span>` : ""}
             ${j.posted_at ? `<span class="pill">${escapeHtml(j.posted_at)}</span>` : ""}
             ${j.salary ? `<span class="pill salary-pill">${escapeHtml(j.salary)}</span>` : ""}
             <span class="pill src-pill ${src.cls}">${escapeHtml(src.name)}</span>
             ${jobInterviewBadge(j)}
             ${jobDescBadge(j)}
-            ${(j.tags || []).slice(0, 2).map((t) => `<span class="pill">${escapeHtml(t)}</span>`).join("")}
           </div>
           ${descPreview ? `<p class="cluster-variants">${highlightText(descPreview, query)}${(j.description || "").length > 120 ? "…" : ""}</p>` : ""}
         </div>
@@ -1329,6 +1355,8 @@ function renderFeed() {
 
   $("bankListView").hidden = true;
   $("bankSections").hidden = true;
+  $("techStackPanel").hidden = true;
+  $("jobTypeBar").hidden = true;
   $("jobsListView").hidden = true;
 
   if (currentBank || total > 0) {
@@ -1697,6 +1725,76 @@ $("exportJobs").addEventListener("click", () => {
   );
 });
 $("toggleSettings").addEventListener("click", openDrawer);
+if ($("heroOpenSettings")) $("heroOpenSettings").addEventListener("click", openDrawer);
+if ($("heroFetchJobs"))    $("heroFetchJobs").addEventListener("click", runFetchJobs);
+
+// job type tabs
+$("jobTypeBar").addEventListener("click", (e) => {
+  const btn = e.target.closest(".job-type-btn");
+  if (!btn) return;
+  activeJobType = btn.dataset.type;
+  renderJobsView();
+});
+
+// ── Tech-stack analysis panel ────────────────────────────────────────────
+let techStackData = null;
+let techStackLoading = false;
+
+async function loadTechStack() {
+  if (techStackLoading) return;
+  techStackLoading = true;
+  const panel = $("techStackPanel");
+  panel.innerHTML = `<div class="ts-loading"><div class="spinner"></div><p>分析技术栈需求中…</p></div>`;
+  panel.hidden = false;
+  try {
+    techStackData = await getJson("/api/jobs/tech-stack");
+  } catch (e) {
+    techStackData = null;
+    panel.innerHTML = `<p class="feed-error">技术栈分析失败：${escapeHtml(String(e))}</p>`;
+    techStackLoading = false;
+    return;
+  }
+  techStackLoading = false;
+  renderTechStack();
+}
+
+function renderTechStack() {
+  const panel = $("techStackPanel");
+  if (!techStackData) { panel.hidden = true; return; }
+  const { total_jobs, categories } = techStackData;
+  if (!categories || categories.length === 0) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  // find max count overall for relative bar sizing
+  const globalMax = Math.max(...categories.flatMap(c => c.items.map(i => i.count)), 1);
+
+  const cardsHtml = categories.map(cat => {
+    const items = cat.items.slice(0, 10); // cap at 10 per card
+    const catMax = Math.max(...items.map(i => i.count), 1);
+    const rows = items.map(item => {
+      const barPct = Math.round(item.count / catMax * 100);
+      const isHot  = item.pct >= 10;
+      return `<div class="ts-item${isHot ? ' ts-hot' : ''}">
+        <span class="ts-item-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+        <div class="ts-bar-wrap"><div class="ts-bar-fill" style="width:${barPct}%"></div></div>
+        <span class="ts-item-count">${item.count}</span>
+        <span class="ts-item-pct">${item.pct}%</span>
+      </div>`;
+    }).join('');
+    return `<div class="ts-card" data-cat="${escapeHtml(cat.name)}">
+      <div class="ts-card-title">${escapeHtml(cat.name)}</div>
+      ${rows}
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="ts-header">
+      <h2>📊 技术栈需求分析</h2>
+      <span class="ts-header-meta">基于 ${total_jobs} 个岗位 JD · 数据开发 + Agent 开发</span>
+    </div>
+    <div class="ts-grid">${cardsHtml}</div>
+  `;
+}
 $("closeSettings").addEventListener("click", closeDrawer);
 $("drawerBackdrop").addEventListener("click", closeDrawer);
 $("modalClose").addEventListener("click", closeModal);

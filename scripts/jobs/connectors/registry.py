@@ -4,7 +4,14 @@ from __future__ import annotations
 from scripts.corpus.classify import _COMPANY_ALIASES
 from scripts.jobs.base import JobConnector
 from scripts.jobs.connectors.boss_zhipin import BossZhipinConnector
+from scripts.jobs.connectors.boss_cdp import BossCdpConnector
+from scripts.jobs.connectors.boss_drission import BossDrissionConnector
 from scripts.jobs.connectors.bytedance import ByteDanceConnector
+from scripts.jobs.connectors.tencent import TencentConnector
+from scripts.jobs.connectors.meituan import MeituanConnector
+from scripts.jobs.connectors.netease import NetEaseConnector
+from scripts.jobs.connectors.xiaomi import XiaomiConnector
+from scripts.jobs.connectors.kuaishou import KuaishouConnector
 from scripts.jobs.connectors.job_pro import (
     COMPANY_TO_JOB_PRO_KEY,
     JobProConnector,
@@ -14,32 +21,41 @@ from scripts.jobs.connectors.job_pro import (
 # connector_id -> 官方招聘主体（InterviewRadar 内置，可与 job-pro 并存）
 CAREER_SITE_CONNECTORS: dict[str, type[JobConnector]] = {
     "bytedance": ByteDanceConnector,
+    "tencent": TencentConnector,
+    "meituan": MeituanConnector,
+    "netease": NetEaseConnector,
+    "xiaomi": XiaomiConnector,
+    "kuaishou": KuaishouConnector,
 }
 
 # 聚合 / 第三方
 AGGREGATOR_CONNECTORS: dict[str, type[JobConnector]] = {
     "boss_zhipin": BossZhipinConnector,
+    "boss_cdp": BossCdpConnector,
+    "boss_drission": BossDrissionConnector,
     "job_pro": JobProConnector,
 }
 
-# 公司名（canonical）-> 优先拉取的官方站 connector id
+# 公司名（canonical）-> 优先拉取的官方站 connector id（多个按顺序尝试）
 COMPANY_CAREER_SITES: dict[str, list[str]] = {
-    "字节跳动": ["job_pro"],
-    "腾讯": ["job_pro"],
+    "字节跳动": ["bytedance", "job_pro"],
+    "腾讯":     ["tencent", "job_pro"],
     "阿里巴巴": ["job_pro"],
-    "美团": ["job_pro"],
-    "百度": ["job_pro"],
-    "华为": ["job_pro"],
-    "快手": ["job_pro"],
-    "网易": ["job_pro"],
-    "滴滴": ["job_pro"],
-    "京东": ["job_pro"],
-    "拼多多": ["job_pro"],
-    "小米": ["job_pro"],
+    "美团":     ["meituan", "job_pro"],
+    "百度":     ["job_pro"],
+    "华为":     ["job_pro"],
+    "快手":     ["kuaishou", "job_pro"],
+    "网易":     ["netease", "job_pro"],
+    "滴滴":     ["job_pro"],
+    "京东":     ["job_pro"],
+    "拼多多":   ["job_pro"],
+    "小米":     ["xiaomi", "job_pro"],
     "哔哩哔哩": ["job_pro"],
-    "小红书": ["job_pro"],
+    "小红书":   ["job_pro"],
     "科大讯飞": ["job_pro"],
-    "商汤": ["job_pro"],
+    "商汤":     ["job_pro"],
+    "OPPO":     ["job_pro"],
+    "vivo":     ["job_pro"],
 }
 
 # 展示用元数据（含尚未实现的站点，便于 UI 列出规划能力）
@@ -53,12 +69,21 @@ CAREER_SITE_CATALOG: list[dict] = [
         "requires": "Node.js 18+ 或 npm i -g job-pro",
     },
     {"id": "boss_zhipin", "label": "Boss直聘", "kind": "aggregator", "status": "cookie_required"},
-    {"id": "bytedance", "label": "字节跳动招聘（内置）", "kind": "official", "status": "live", "company": "字节跳动"},
-    {"id": "tencent", "label": "腾讯招聘", "kind": "official", "status": "via_job_pro", "company": "腾讯"},
-    {"id": "alibaba", "label": "阿里巴巴招聘", "kind": "official", "status": "via_job_pro", "company": "阿里巴巴"},
-    {"id": "meituan", "label": "美团招聘", "kind": "official", "status": "via_job_pro", "company": "美团"},
-    {"id": "baidu", "label": "百度招聘", "kind": "official", "status": "via_job_pro", "company": "百度"},
-    {"id": "huawei", "label": "华为招聘", "kind": "official", "status": "via_job_pro", "company": "华为"},
+    {"id": "bytedance", "label": "字节跳动招聘", "kind": "official", "status": "live", "company": "字节跳动"},
+    {"id": "tencent",   "label": "腾讯招聘",     "kind": "official", "status": "live", "company": "腾讯"},
+    {"id": "meituan",   "label": "美团招聘",      "kind": "official", "status": "live", "company": "美团"},
+    {"id": "netease",   "label": "网易招聘",      "kind": "official", "status": "live", "company": "网易"},
+    {"id": "xiaomi",    "label": "小米招聘",      "kind": "official", "status": "live", "company": "小米"},
+    {"id": "kuaishou",  "label": "快手招聘",      "kind": "official", "status": "live", "company": "快手"},
+    {"id": "alibaba",   "label": "阿里巴巴招聘",  "kind": "official", "status": "via_job_pro", "company": "阿里巴巴"},
+    {"id": "baidu",     "label": "百度招聘",      "kind": "official", "status": "via_job_pro", "company": "百度"},
+    {"id": "huawei",    "label": "华为招聘",      "kind": "official", "status": "via_job_pro", "company": "华为"},
+    {"id": "didi",      "label": "滴滴招聘",      "kind": "official", "status": "via_job_pro", "company": "滴滴"},
+    {"id": "jd",        "label": "京东招聘",      "kind": "official", "status": "via_job_pro", "company": "京东"},
+    {"id": "bilibili",  "label": "B站招聘",       "kind": "official", "status": "via_job_pro", "company": "哔哩哔哩"},
+    {"id": "xiaohongshu","label": "小红书招聘",   "kind": "official", "status": "via_job_pro", "company": "小红书"},
+    {"id": "oppo",      "label": "OPPO招聘",      "kind": "official", "status": "via_job_pro", "company": "OPPO"},
+    {"id": "vivo",      "label": "vivo招聘",      "kind": "official", "status": "via_job_pro", "company": "vivo"},
 ]
 
 
@@ -97,21 +122,24 @@ def resolve_connector_ids(
     if include_aggregators:
         ids.append("boss_zhipin")
 
-    if include_job_pro and "job_pro" not in ids:
-        ids.append("job_pro")
-
     canonical_companies = [normalize_company_name(c) for c in (companies or [])]
     canonical_companies = [c for c in canonical_companies if c]
 
     if canonical_companies:
+        # 指定公司时：先用直连官网，fallback 到 job-pro
         for company in canonical_companies:
             for cid in COMPANY_CAREER_SITES.get(company, []):
-                if cid not in ids and cid != "job_pro":
+                if cid not in ids:
                     ids.append(cid)
-    elif not sources:
+        if include_job_pro and "job_pro" not in ids:
+            ids.append("job_pro")
+    else:
+        # 无公司限制：直连官网 + job-pro（覆盖阿里/百度/华为等）
         for cid in CAREER_SITE_CONNECTORS:
             if cid not in ids:
                 ids.append(cid)
+        if include_job_pro and "job_pro" not in ids:
+            ids.append("job_pro")
 
     return ids
 
@@ -129,4 +157,9 @@ def build_connector(connector_id: str, **kwargs) -> JobConnector | None:
         )
     if connector_id == "boss_zhipin":
         return BossZhipinConnector(prefer_cdp=bool(kwargs.get("boss_cdp_prefer")))
+    if connector_id == "boss_cdp":
+        port = kwargs.get("boss_cdp_port")
+        return BossCdpConnector(port=port, with_details=True)
+    if connector_id == "boss_drission":
+        return BossDrissionConnector(with_details=True)
     return cls()

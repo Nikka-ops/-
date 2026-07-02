@@ -3,19 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>data_agent_adar · 面经库</title>
+  <title>面试雷达 · 数据开发 & Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <header class="top-bar">
     <div class="top-inner">
       <a class="brand" href="/">
-        <span class="brand-icon">DA</span>
-        <span class="brand-text">data_agent_adar</span>
+        <span class="brand-icon">IR</span>
+        <span class="brand-text">面试雷达</span>
+        <span class="brand-sub">数据开发 / Agent</span>
       </a>
       <div class="search-wrap">
         <span class="search-icon" aria-hidden="true">⌕</span>
-        <input id="searchQ" type="search" placeholder="搜索面经、公司、岗位…" autocomplete="off" />
+        <input id="searchQ" type="search" placeholder="搜索面经、公司…（近 3 个月）" autocomplete="off" />
         <button id="clearSearch" type="button" class="clear-btn" hidden aria-label="清空">×</button>
       </div>
       <button id="toggleSettings" type="button" class="icon-btn" title="构建题库">⚙</button>
@@ -27,6 +30,25 @@
     <div class="filter-bar company-bar">
       <span class="filter-bar-label">企业</span>
       <div id="companyFilter" class="company-filter" aria-label="按企业筛选"></div>
+    </div>
+    <div class="filter-bar source-bar" id="sourceFilterBar" hidden>
+      <span class="filter-bar-label">来源</span>
+      <div class="source-filter" id="sourceFilter" role="tablist" aria-label="按来源筛选面经">
+        <button type="button" class="chip source-chip active" data-source="all" role="tab" aria-selected="true">全部</button>
+        <button type="button" class="chip source-chip" data-source="xiaohongshu" role="tab" aria-selected="false">小红书</button>
+        <button type="button" class="chip source-chip" data-source="nowcoder" role="tab" aria-selected="false">牛客</button>
+      </div>
+    </div>
+    <div class="filter-bar bank-bar" id="bankFilterBar" hidden>
+      <span class="filter-bar-label">主题</span>
+      <div class="bank-filter-topics" id="bankTopicFilter" role="tablist" aria-label="按主题筛选题目"></div>
+      <span class="filter-bar-label bank-conf-label">频次</span>
+      <div class="bank-filter-conf" id="bankConfFilter" role="tablist" aria-label="按出现频次筛选">
+        <button type="button" class="chip bank-conf-chip active" data-confidence="all">全部</button>
+        <button type="button" class="chip bank-conf-chip" data-confidence="高频">高频</button>
+        <button type="button" class="chip bank-conf-chip" data-confidence="中频">中频</button>
+        <button type="button" class="chip bank-conf-chip" data-confidence="低频">低频</button>
+      </div>
     </div>
   </header>
 
@@ -40,9 +62,9 @@
       <div class="field-group">
         <span class="field-label">目标岗位</span>
         <div id="roleChipRowDrawer" class="role-grid"></div>
-        <label class="custom-role">
+        <label class="custom-role hidden">
           <span>或自定义岗位</span>
-          <input id="role" type="text" value="AI 应用开发" placeholder="输入其他岗位…" />
+          <input id="role" type="text" value="数据开发" placeholder="输入其他岗位…" />
         </label>
       </div>
       <label>意向公司（逗号分隔）<input id="companies" type="text" placeholder="字节跳动, 美团" /></label>
@@ -50,11 +72,13 @@
         <summary>数据源</summary>
         <details class="advanced" open>
           <summary>小红书面经（主数据源）</summary>
-          <p class="hint warn-hint">务必用<strong>专用小号</strong>，勿用主号。在 .env 配置 <code>XHS_WEB_SESSION</code>（浏览器 Cookie 里的 web_session）。每天 1～2 次、每次 2～4 个词。</p>
+          <p class="hint warn-hint">主源：小红书（专用 Chrome CDP 或 Cookie）。默认抓取<strong>近 3 个月</strong>面经；图片帖自动 OCR。批间约 30s，不必等数小时。</p>
           <p id="xhsStatus" class="status"></p>
-          <button id="submitXhsScrape" type="button" class="ghost block">安全抓取小红书（MediaCrawler）</button>
-          <label class="check"><input id="xhsUseExport" type="checkbox" checked /> 构建面经库时导入本地小红书 JSON</label>
-          <label class="check"><input id="xhsPriority" type="checkbox" checked /> 小红书优先（有足够笔记时跳过牛客联网）</label>
+          <button id="submitXhsIncremental" type="button" class="primary block">抓取小红书并入库</button>
+          <label class="check"><input id="xhsCoreOnly" type="checkbox" checked /> 核心词（数开/数仓 26 词）</label>
+          <button id="submitXhsScrape" type="button" class="ghost block">仅抓取 JSON（不入库）</button>
+          <label class="check"><input id="xhsUseExport" type="checkbox" checked /> 构建面经库时导入本地小红书 JSON（主源）</label>
+          <label class="check"><input id="xhsPriority" type="checkbox" checked /> 小红书优先（有足够笔记时跳过牛客联网/滚动库）</label>
           <label class="check"><input id="xhsDeep" type="checkbox" checked /> 图片 OCR（面经多在图里，建议开启）</label>
           <label class="check"><input id="xhsLive" type="checkbox" /> 构建时联网重抓小红书（高风险，勿勾）</label>
         </details>
@@ -74,12 +98,12 @@
           <p id="localHint" class="hint"></p>
         </details>
         <details class="advanced">
-          <summary>在招岗位 JD（开源 job-pro）</summary>
-          <p class="hint">默认拉取腾讯、字节、阿里、美团、百度等官网在招岗位；需本机 Node.js 18+</p>
+          <summary>在招岗位 JD（数据开发 + Agent）</summary>
+          <p class="hint">仅保留与「数据开发/数仓」「Agent 开发」相关的岗位；官网 JD 默认近 3 个月</p>
           <label>招聘渠道
             <select id="jobProScope">
-              <option value="all" selected>全部（社招+校招+实习）</option>
-              <option value="social">社招</option>
+              <option value="social" selected>社招</option>
+              <option value="all">全部（社招+校招+实习）</option>
               <option value="campus">校招</option>
               <option value="intern">实习</option>
             </select>
@@ -116,14 +140,30 @@
       </div>
     </div>
 
-    <p id="feedHint" class="feed-hint">选择上方岗位与企业标签筛选；面经、题库、在招岗位共用筛选</p>
+    <div id="feedHint" class="feed-hint-hero">
+      <div class="hero-icon">📡</div>
+      <h2 class="hero-title">面试雷达</h2>
+      <p class="hero-desc">聚焦 <strong>数据开发</strong>（数仓 / ETL / Spark / Flink）&amp; <strong>Agent 开发</strong>（RAG / MCP / LLM 应用）· 面经近 3 个月 · AI 质检去重</p>
+      <div class="hero-actions">
+        <button type="button" class="primary" id="heroOpenSettings">⚙ 构建面经库</button>
+        <button type="button" class="ghost" id="heroFetchJobs">💼 拉取在招岗位</button>
+      </div>
+    </div>
     <div id="feedEmpty" class="feed-empty" hidden>
       <p>没有匹配的面经</p>
       <button type="button" id="resetFilters" class="ghost">清除筛选</button>
       <button type="button" id="fetchJobsInline" class="primary" hidden>拉取在招岗位</button>
     </div>
-    <div id="feedGrid" class="feed-grid" role="list"></div>
+    <div id="feedGrid" class="feed-grid" role="list" hidden></div>
+    <div id="feedSections" class="feed-sections" hidden></div>
     <ol id="bankListView" class="bank-rank-list" hidden></ol>
+    <div id="bankSections" class="bank-sections" hidden></div>
+    <div id="techStackPanel" class="tech-stack-panel" hidden></div>
+    <div id="jobTypeBar" class="job-type-bar" hidden>
+      <button class="job-type-btn active" data-type="all">全部 <span id="jobCountAll" class="job-type-cnt"></span></button>
+      <button class="job-type-btn" data-type="full">正式 <span id="jobCountFull" class="job-type-cnt"></span></button>
+      <button class="job-type-btn" data-type="intern">实习 <span id="jobCountIntern" class="job-type-cnt"></span></button>
+    </div>
     <ol id="jobsListView" class="bank-rank-list jobs-list" hidden></ol>
     <div id="feedLoading" class="feed-loading" hidden>
       <div class="spinner"></div>
@@ -140,7 +180,7 @@
     </div>
   </div>
 
-  <footer><small>牛客 + 小红书面经 · job-pro 在招 JD · 仅供个人备考</small></footer>
+  <footer><small>牛客 + 小红书面经 &nbsp;·&nbsp; job-pro 在招 JD &nbsp;·&nbsp; 仅供个人备考</small></footer>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -14,8 +14,10 @@ from scripts.api.uploads import save_resume_base64
 from scripts.config import (
     app_display_name,
     banks_dir,
+    focus_role_ids,
     full_scrape_recency_days,
     jobs_dir,
+    job_recency_days,
     package_root,
     resolve_posts_fallback,
     sample_posts_path,
@@ -24,13 +26,21 @@ from scripts.jobs.service import (
     catalog_job_sources,
     enrich_job_in_snapshot,
     fetch_jobs,
+    fetch_jobs_multi,
     get_job_snapshot,
     list_job_snapshots,
 )
 from scripts.jobs.service import JobFetchConfig as JobsFetchConfig
 from scripts.corpus.bank_cache import list_banks, load_bank_bundle, load_merged_role_bundle
 from scripts.corpus.company_catalog import list_company_groups
-from scripts.corpus.tech_roles import canonical_role_id, get_tech_role, list_tech_roles, resolve_role_label
+from scripts.corpus.tech_roles import (
+    canonical_role_id,
+    get_tech_role,
+    list_focus_tech_roles,
+    parse_role_ids,
+    resolve_role_label,
+)
+from scripts.config import focus_role_ids
 from scripts.service import RunConfig, run_pipeline
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -38,9 +48,9 @@ DEFAULT_SAMPLE = sample_posts_path()
 
 _IMAGE_PROXY_HOSTS = (
     "uploadfiles.nowcoder.com",
-    "sns-webpic-qc.xhscdn.com",
-    "sns-img-qc.xhscdn.com",
-    "xhscdn.com",
+    "nowcoder.com",
+    "xhscdn.com",          # covers sns-webpic-qc.xhscdn.com, sns-img-qc.xhscdn.com, etc.
+    "xiaohongshu.com",     # covers ci.xiaohongshu.com and other XHS CDN origins
 )
 
 
@@ -57,14 +67,18 @@ def _proxy_image_response(handler: BaseHTTPRequestHandler, parsed) -> None:
     try:
         resp = requests.get(
             url,
-            headers={"User-Agent": "Mozilla/5.0", "Referer": referer},
-            timeout=20,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Referer": referer,
+            },
+            timeout=15,
         )
         resp.raise_for_status()
         ctype = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
         _file_response(handler, 200, resp.content, ctype)
-    except Exception as exc:  # noqa: BLE001
-        _json_response(handler, 502, {"error": "proxy_failed", "message": str(exc)})
+    except Exception:  # noqa: BLE001
+        # CDN URL may have expired — return 404 so frontend can show fallback
+        _json_response(handler, 404, {"error": "image_unavailable"})
 
 
 def _resolve_local_asset_file(path_str: str) -> Path | None:
@@ -84,14 +98,15 @@ def _resolve_local_asset_file(path_str: str) -> Path | None:
             candidates.append(candidate)
     for resolved in candidates:
         for root in (Path.cwd().resolve(), package_root().resolve()):
-            assets_root = (root / "corpus_cache" / "assets").resolve()
-            if not assets_root.is_dir():
-                continue
-            try:
-                resolved.relative_to(assets_root)
-            except ValueError:
-                continue
-            return resolved
+            for assets_subdir in ("corpus_cache/assets", "corpus_cache/xhs/assets"):
+                assets_root = (root / assets_subdir).resolve()
+                if not assets_root.is_dir():
+                    continue
+                try:
+                    resolved.relative_to(assets_root)
+                except ValueError:
+                    continue
+                return resolved
     return None
 
 
@@ -198,6 +213,7 @@ def _config_from_body(
         filter_company_questions=bool(data.get("filter_company_questions")),
         prep_mode=str(data.get("prep_mode") or "agent"),
         agent_handoff=bool(data.get("agent_handoff", default_agent_handoff)),
+        recency_window_days=int(data.get("recency_window_days") or 90),
     )
 
 
@@ -261,7 +277,12 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         return 200, payload
 
     if method == "GET" and route == "/api/roles":
-        return 200, {"roles": list_tech_roles(), "default_role_id": "ai_app"}
+        ids = focus_role_ids()
+        return 200, {
+            "roles": list_focus_tech_roles(),
+            "default_role_id": ids[0] if ids else "data",
+            "focus_role_ids": ids,
+        }
 
     if method == "GET" and route == "/api/xhs/status":
         from scripts.scrape.xhs_export import xhs_scrape_status
@@ -277,7 +298,7 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         from scripts.tools.scrape_diagnose import diagnose
 
         diag_qs = parse_qs(urlparse(path).query)
-        role_id = (diag_qs.get("role_id") or ["ai_app"])[0]
+        role_id = (diag_qs.get("role_id") or [focus_role_ids()[0]])[0]
         companies = (diag_qs.get("companies") or ["all"])[0]
         return 200, diagnose(str(role_id), str(companies))
 
@@ -320,13 +341,31 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
     if method == "GET" and route == "/api/jobs/sources":
         return 200, {"sources": catalog_job_sources()}
 
+    if method == "GET" and route == "/api/jobs/tech-stack":
+        from scripts.jobs.tech_stack import analyse_tech_stack
+        cache_root = jobs_dir()
+        snaps = list_job_snapshots(cache_root)
+        # collect jobs from latest data + ai_app snapshots
+        all_jobs: list[dict] = []
+        loaded: set[str] = set()
+        for role_id in ("data", "ai_app"):
+            for s in snaps:
+                if s.get("role_id") == role_id and s.get("slug") not in loaded:
+                    bundle = get_job_snapshot(cache_root, s["slug"])
+                    if bundle:
+                        all_jobs.extend(bundle.get("jobs") or [])
+                        loaded.add(s["slug"])
+                    break
+        result = analyse_tech_stack(all_jobs)
+        return 200, result
+
     if method == "GET" and route == "/api/jobs":
         cache_root = jobs_dir()
         return 200, {"snapshots": list_job_snapshots(cache_root), "cache_dir": str(cache_root)}
 
     if method == "GET" and route.startswith("/api/jobs/"):
         slug = unquote(route[len("/api/jobs/") :].strip("/"))
-        if not slug or "/" in slug or slug == "sources":
+        if not slug or "/" in slug or slug in ("sources", "tech-stack"):
             return 400, {"error": "invalid_slug"}
         bundle = get_job_snapshot(jobs_dir(), slug)
         if bundle is None:
@@ -373,46 +412,171 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         return 200, result.to_dict()
 
     if route == "/api/xhs/scrape-safe":
-        from scripts.corpus.classify import classify_search_queries
-        from scripts.corpus.tech_roles import resolve_role_label
-        from scripts.scrape.mediacrawler_driver import MediaCrawlerScrapeError
+        from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
         from scripts.scrape.xhs_export import run_safe_xhs_scrape
+        from scripts.scrape.xhs_scrape_plan import plan_xhs_scrape_batch
 
         data = dict(body or {})
-        keywords = [str(k).strip() for k in (data.get("keywords") or []) if str(k).strip()]
         role_id = str(data.get("role_id") or "").strip()
         companies = [str(c).strip() for c in (data.get("companies") or []) if str(c).strip()]
-        if not keywords and role_id:
-            role_label = resolve_role_label(role_id=role_id)
-            keywords = classify_search_queries(
-                roles=[role_label],
-                companies=companies or None,
-                role_id=role_id,
-            )
-            keywords = [f"{q} 面经" if "面经" not in q else q for q in keywords]
+        explicit = [str(k).strip() for k in (data.get("keywords") or []) if str(k).strip()]
+        keywords, pause, batch_size, plan_meta = plan_xhs_scrape_batch(
+            role_id or "data",
+            companies,
+            explicit_keywords=explicit or None,
+            core_only=bool(data.get("core_only", True)),
+            aggressive=bool(data.get("aggressive")),
+            keywords_per_day=int(data.get("keywords_per_day") or 0),
+            rotate=not explicit,
+        )
         if not keywords:
             return 400, {"error": "keywords_or_role_id_required"}
         try:
             result = run_safe_xhs_scrape(
                 keywords,
-                batch_size=int(data.get("batch_size") or 2),
-                pause_seconds=float(data.get("pause_seconds") or 60),
+                batch_size=batch_size,
+                pause_seconds=float(data.get("pause_seconds") or pause),
+                limit_keywords=not bool(data.get("core_only", True)) and not explicit,
             )
+            result.update(plan_meta)
         except ValueError as exc:
             return 400, {"error": "xhs_config", "message": str(exc)}
-        except (MediaCrawlerScrapeError, FileNotFoundError) as exc:
+        except (SpiderXHSScrapeError, FileNotFoundError) as exc:
             return 502, {"error": "xhs_scrape_failed", "message": str(exc)}
         return 200, result
+
+    if route == "/api/xhs/incremental":
+        from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError, _HTTP_461_HINT
+        from scripts.scrape.xhs_export import (
+            collect_xhs_export_files,
+            run_safe_xhs_scrape,
+        )
+        from scripts.scrape.scrape_state import (
+            collect_note_ids_from_export_files,
+            load_scrape_state,
+            register_xhs_note_ids,
+            save_scrape_state,
+        )
+        from scripts.scrape.xhs_scrape_plan import plan_xhs_scrape_batch
+        from scripts.config import xhs_export_max_age_days
+
+        data = dict(body or {})
+        role_id = str(data.get("role_id") or "data").strip()
+        companies = [str(c).strip() for c in (data.get("companies") or []) if str(c).strip()]
+        import_only = bool(data.get("import_only"))
+        out: dict = {"role_id": role_id, "xhs": {}, "classify": {}}
+
+        if not import_only:
+            keywords, pause, batch_size, plan_meta = plan_xhs_scrape_batch(
+                role_id,
+                companies,
+                core_only=bool(data.get("core_only", True)),
+                aggressive=bool(data.get("aggressive")),
+                keywords_per_day=int(data.get("keywords_per_day") or 0),
+            )
+            out["xhs"]["plan"] = plan_meta
+            out["xhs"]["keywords_today"] = keywords
+            try:
+                scrape = run_safe_xhs_scrape(
+                    keywords,
+                    batch_size=batch_size,
+                    pause_seconds=float(data.get("pause_seconds") or pause),
+                    limit_keywords=not bool(data.get("core_only", True)),
+                )
+                out["xhs"].update(scrape)
+            except (SpiderXHSScrapeError, FileNotFoundError, ValueError) as exc:
+                msg = str(exc)
+                out["xhs"]["error"] = msg
+                if "461" not in msg:
+                    return 502, {"error": "xhs_scrape_failed", "message": msg, **out}
+            state = load_scrape_state()
+            paths = collect_xhs_export_files(max_age_days=xhs_export_max_age_days())
+            out["xhs"]["note_ids_registered"] = register_xhs_note_ids(
+                state,
+                collect_note_ids_from_export_files(paths),
+            )
+            save_scrape_state(state)
+
+        bank_body = dict(data)
+        bank_body.setdefault("role_id", role_id)
+        bank_body.setdefault("role", resolve_role_label(role_id=role_id))
+        bank_body["refresh"] = True
+        bank_body["rebuild_only"] = False
+        bank_body["xhs_use_export"] = True
+        bank_body["xhs_live"] = False
+        bank_body["xhs_deep"] = bool(data.get("xhs_deep", True))
+        bank_body["xhs_priority"] = bool(data.get("xhs_priority", True))
+        bank_body["discover_nowcoder"] = bool(data.get("discover_nowcoder", False))
+        try:
+            config = _config_from_body(bank_body, default_agent_handoff=False)
+            pipeline = run_pipeline(config)
+            payload = pipeline.to_dict()
+            bundle = load_bank_bundle(Path(config.cache_dir), pipeline.slug)
+            if bundle:
+                payload["posts"] = bundle.get("posts", [])
+                payload["companies"] = bundle.get("companies", [])
+            out["classify"] = {
+                k: v
+                for k, v in (payload.get("sources") or {}).items()
+                if k
+                in {
+                    "input",
+                    "kept",
+                    "junk_dropped",
+                    "xhs_promo_dropped",
+                    "xhs_asking_dropped",
+                    "xhs_not_recap_dropped",
+                    "role_dropped",
+                    "role_prefilter_dropped",
+                    "ai_dropped",
+                    "rule_kept",
+                    "xiaohongshu_export",
+                    "xhs_role_matched",
+                }
+                or k.endswith("_dropped")
+            }
+            out.update(
+                {
+                    "slug": payload.get("slug"),
+                    "post_count": payload.get("post_count"),
+                    "question_count": payload.get("question_count"),
+                    "ingest_warnings": payload.get("ingest_warnings"),
+                    "posts": payload.get("posts"),
+                    "companies": payload.get("companies"),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            return 500, {"error": "bank_build_failed", "message": str(exc), **out}
+
+        if out.get("post_count"):
+            return 200, out
+        if import_only and out.get("xhs", {}).get("error"):
+            return 200, out
+        err = (out.get("xhs") or {}).get("error", "")
+        if "461" in err:
+            return 502, {"error": "xhs_blocked", "message": _HTTP_461_HINT, **out}
+        return 200, out
 
     if route == "/api/jobs/fetch":
         data = dict(body or {})
         role = str(data.get("role") or "")
         role_id = str(data.get("role_id") or "")
-        if not role and not role_id:
+        raw_role_ids = data.get("role_ids")
+        if isinstance(raw_role_ids, list):
+            role_ids = [
+                canonical_role_id(str(r).strip())
+                for r in raw_role_ids
+                if str(r).strip()
+            ]
+        else:
+            role_ids = parse_role_ids(role_id, str(data.get("role_ids_csv") or ""))
+        if not role and not role_ids:
+            role_ids = focus_role_ids()
+        if not role and not role_ids:
             return 400, {"error": "role or role_id is required"}
         job_config = JobsFetchConfig(
             role=role,
-            role_id=role_id,
+            role_id=role_ids[0] if len(role_ids) == 1 else "",
             companies=list(data.get("companies") or []),
             cities=list(data.get("cities") or []),
             sources=list(data.get("sources") or []),
@@ -425,8 +589,9 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
             boss_cdp=bool(data.get("boss_cdp")),
             skip_interview_discover=bool(data.get("skip_interview_discover", True)),
             cache_dir=str(data.get("cache_dir") or jobs_dir()),
+            job_recency_days=int(data.get("job_recency_days") or 0),
         )
-        result = fetch_jobs(job_config, job_config.cache_dir or jobs_dir())
+        result = fetch_jobs_multi(job_config, role_ids, job_config.cache_dir or jobs_dir())
         return 200, result.to_dict()
 
     if route == "/api/jobs/enrich":

@@ -197,14 +197,24 @@ def _parse_posted_date(job: JobPosting) -> date | None:
         return None
 
 
+_OFFICIAL_SOURCES = frozenset({
+    "job_pro", "bytedance", "tencent", "meituan", "netease", "xiaomi", "kuaishou",
+})
+
+
+def _is_official_source(source: str) -> bool:
+    s = source or ""
+    return s in _OFFICIAL_SOURCES or any(s.startswith(f"{p}:") for p in _OFFICIAL_SOURCES)
+
+
 def filter_official_jobs_by_recency(
     jobs: list[JobPosting],
     *,
     window_days: int = 60,
     today: date | None = None,
-    official_prefix: str = "job_pro",
+    official_prefix: str = "job_pro",  # kept for backward compat; ignored
 ) -> tuple[list[JobPosting], dict]:
-    """仅过滤官网(job-pro)岗位；Boss 等聚合源保留。无发布日期的官网岗位剔除。"""
+    """过滤官网直连岗位（所有直连来源）；Boss 聚合源保留。无发布日期的官网岗位剔除。"""
     ref = today or date.today()
     cutoff = ref - timedelta(days=window_days)
     kept: list[JobPosting] = []
@@ -216,13 +226,20 @@ def filter_official_jobs_by_recency(
         "official_dropped_old": 0,
     }
     for job in jobs:
-        if not (job.source or "").startswith(official_prefix):
+        if not _is_official_source(job.source or ""):
             kept.append(job)
             continue
         meta["official_before"] += 1
         posted = _parse_posted_date(job)
         if posted is None:
-            meta["official_dropped_no_date"] += 1
+            # job-pro 官网来源无日期视为过期丢弃；其他直连来源（腾讯/美团等）无日期则保留
+            src = job.source or ""
+            if src.startswith("job_pro") or src.startswith("job_pro:"):
+                meta["official_dropped_no_date"] += 1
+                continue
+            # 直连 API 无日期：保留（API 实时在线即为有效）
+            meta["official_kept"] += 1
+            kept.append(job)
             continue
         if posted < cutoff:
             meta["official_dropped_old"] += 1
