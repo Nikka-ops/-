@@ -343,7 +343,6 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
 
     if method == "GET" and route == "/api/jobs/tech-stack":
         from scripts.jobs.tech_stack import analyse_tech_stack
-        from scripts.jobs.service import list_job_snapshots, get_job_snapshot
         cache_root = jobs_dir()
         snaps = list_job_snapshots(cache_root)
         # collect jobs from latest data + ai_app snapshots

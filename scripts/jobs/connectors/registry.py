@@ -4,6 +4,8 @@ from __future__ import annotations
 from scripts.corpus.classify import _COMPANY_ALIASES
 from scripts.jobs.base import JobConnector
 from scripts.jobs.connectors.boss_zhipin import BossZhipinConnector
+from scripts.jobs.connectors.boss_cdp import BossCdpConnector
+from scripts.jobs.connectors.boss_drission import BossDrissionConnector
 from scripts.jobs.connectors.bytedance import ByteDanceConnector
 from scripts.jobs.connectors.tencent import TencentConnector
 from scripts.jobs.connectors.meituan import MeituanConnector
@@ -29,6 +31,8 @@ CAREER_SITE_CONNECTORS: dict[str, type[JobConnector]] = {
 # 聚合 / 第三方
 AGGREGATOR_CONNECTORS: dict[str, type[JobConnector]] = {
     "boss_zhipin": BossZhipinConnector,
+    "boss_cdp": BossCdpConnector,
+    "boss_drission": BossDrissionConnector,
     "job_pro": JobProConnector,
 }
 
@@ -153,4 +157,9 @@ def build_connector(connector_id: str, **kwargs) -> JobConnector | None:
         )
     if connector_id == "boss_zhipin":
         return BossZhipinConnector(prefer_cdp=bool(kwargs.get("boss_cdp_prefer")))
+    if connector_id == "boss_cdp":
+        port = kwargs.get("boss_cdp_port")
+        return BossCdpConnector(port=port, with_details=True)
+    if connector_id == "boss_drission":
+        return BossDrissionConnector(with_details=True)
     return cls()

@@ -176,7 +176,7 @@ def fetch_jobs(config: JobFetchConfig, jobs_root) -> JobFetchResult:
             warnings.append(f"未知来源: {cid}")
             continue
 
-        if cid == "boss_zhipin":
+        if cid in ("boss_zhipin", "boss_cdp", "boss_drission"):
             boss_jobs: list[JobPosting] = []
             city_status: list[str] = []
             for city in cities[:6]:
