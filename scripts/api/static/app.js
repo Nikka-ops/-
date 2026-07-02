@@ -609,6 +609,8 @@ function setViewMode(mode) {
   $("exportMd").hidden = mode === "jobs";
   $("exportJobs").hidden = mode !== "jobs";
   $("genPrepBtn").hidden = mode !== "bank";
+  if ($("ragSearchBar")) $("ragSearchBar").hidden = mode !== "bank";
+  if ($("ragResults") && mode !== "bank") $("ragResults").hidden = true;
   syncSourceFilterBar();
   syncBankFilterBar();
   renderCompanyChips();
@@ -1028,6 +1030,7 @@ function renderJobModalBody(job) {
       ${job.posted_at ? `<dt>发布</dt><dd>${escapeHtml(job.posted_at)}</dd>` : ""}
     </dl>
     ${job.url && job.url.startsWith("http") ? `<p><a class="modal-link" href="${escapeHtml(job.url)}" target="_blank" rel="noopener">查看官网职位 ↗</a></p>` : ""}
+    ${desc ? `<div style="margin-top:12px"><button class="ghost" onclick="runJdAnalysis(${JSON.stringify(desc)})">📊 分析 JD 覆盖缺口</button></div>` : ""}
   `;
 }
 
@@ -1734,7 +1737,7 @@ async function runGenPrep() {
   const btn = $("genPrepBtn");
   const role = $("role")?.value?.trim() || currentBank?.role || "数据开发";
   const companies = (currentBank?.companies || []);
-  const resumeText = localStorage.getItem("ir_resume_text") || "";
+  const resumeText = ($("resumeText")?.value || "").trim() || localStorage.getItem("ir_resume_text") || "";
 
   btn.disabled = true;
   btn.textContent = "⏳ 生成中…";
@@ -1803,6 +1806,134 @@ function showPrepModal(pkg) {
 }
 
 $("genPrepBtn").addEventListener("click", runGenPrep);
+
+// ── RAG 语义搜索 ────────────────────────────────────────────────────────────
+let _ragBuilding = false;
+
+async function runRagSearch(query) {
+  if (!currentSlug || !query.trim()) return;
+  try {
+    const res = await fetch("/api/rag/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: currentSlug, query, top_k: 12 }),
+    });
+    const data = await res.json();
+    if (data.error === "index_not_built") {
+      if (_ragBuilding) return;
+      _ragBuilding = true;
+      const hint = document.getElementById("ragSearchHint");
+      if (hint) hint.textContent = "⏳ 首次使用需构建索引（约1分钟）…";
+      await fetch("/api/rag/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: currentSlug }),
+      });
+      _ragBuilding = false;
+      return runRagSearch(query);
+    }
+    showRagResults(data.results || [], query);
+  } catch (e) {
+    console.error("RAG search error", e);
+  }
+}
+
+function showRagResults(results, query) {
+  const container = document.getElementById("ragResults");
+  if (!container) return;
+  if (!results.length) {
+    container.innerHTML = '<p class="muted">无相关题目</p>';
+    container.hidden = false;
+    return;
+  }
+  container.innerHTML = `<h4 style="margin:0 0 8px">语义相关题目（"${escapeHtml(query)}"）</h4>` +
+    results.map(r => `<div class="cluster-item" style="margin-bottom:8px;padding:10px 12px">
+      <div class="cluster-title">${escapeHtml(r.text)}</div>
+      <div class="cluster-meta">
+        ${r.topic ? `<span class="pill">${escapeHtml(r.topic)}</span>` : ""}
+        <span class="pill" style="opacity:.6">相似度 ${(r.score * 100).toFixed(0)}%</span>
+      </div>
+    </div>`).join("");
+  container.hidden = false;
+}
+
+// ── JD 覆盖分析 ─────────────────────────────────────────────────────────────
+async function runJdAnalysis(jdText) {
+  const slug = currentSlug || "";
+  try {
+    const res = await fetch("/api/jd-analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jd_text: jdText, slug }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "分析失败");
+    showJdAnalysisModal(data, jdText);
+  } catch (e) {
+    alert("JD 分析失败：" + e.message);
+  }
+}
+
+function showJdAnalysisModal(result, jdText) {
+  const skills = result.skill_points || [];
+  const gaps = result.gaps || [];
+  const rec = result.recommendation || "";
+
+  let html = `<h2 style="margin:0 0 16px">📊 JD 覆盖分析</h2>`;
+  if (rec) html += `<p style="margin-bottom:16px">${escapeHtml(rec)}</p>`;
+
+  if (gaps.length) {
+    html += `<div class="hint warn-hint" style="margin-bottom:16px"><strong>备考缺口：</strong>${gaps.map(g => `<span class="pill">${escapeHtml(g)}</span>`).join(" ")}</div>`;
+  }
+
+  html += `<table style="width:100%;border-collapse:collapse;font-size:.9em">
+    <thead><tr style="border-bottom:1px solid var(--border)">
+      <th style="text-align:left;padding:6px 8px">技能点</th>
+      <th style="text-align:center;padding:6px 8px">题库覆盖</th>
+    </tr></thead><tbody>`;
+  for (const s of skills) {
+    const pct = Math.round((s.coverage || 0) * 100);
+    const color = pct >= 70 ? "var(--green)" : pct >= 40 ? "var(--orange)" : "var(--red,#e55)";
+    html += `<tr style="border-bottom:1px solid var(--border-light,#eee)">
+      <td style="padding:6px 8px">${escapeHtml(s.skill)}</td>
+      <td style="padding:6px 8px;text-align:center">
+        <span style="color:${color};font-weight:600">${pct}%</span>
+        <div style="height:4px;background:var(--border);border-radius:2px;margin-top:4px">
+          <div style="height:4px;background:${color};border-radius:2px;width:${pct}%"></div>
+        </div>
+      </td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  $("modalBody").innerHTML = html;
+  $("cardModal").hidden = false;
+}
+
+// RAG search events
+if ($("ragSearchBtn")) {
+  $("ragSearchBtn").addEventListener("click", () => {
+    const q = ($("ragSearchInput")?.value || "").trim();
+    if (q) runRagSearch(q);
+  });
+}
+if ($("ragSearchInput")) {
+  $("ragSearchInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const q = e.target.value.trim();
+      if (q) runRagSearch(q);
+    }
+  });
+}
+
+// Resume textarea: save to localStorage on change
+if ($("resumeText")) {
+  $("resumeText").addEventListener("input", (e) => {
+    localStorage.setItem("ir_resume_text", e.target.value);
+  });
+  // restore on load
+  const saved = localStorage.getItem("ir_resume_text");
+  if (saved) $("resumeText").value = saved;
+}
 
 // job type tabs
 $("jobTypeBar").addEventListener("click", (e) => {

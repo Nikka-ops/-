@@ -68,6 +68,7 @@
         </label>
       </div>
       <label>意向公司（逗号分隔）<input id="companies" type="text" placeholder="字节跳动, 美团" /></label>
+      <label>简历摘要（可选，用于生成追问链）<textarea id="resumeText" rows="4" placeholder="粘贴简历中与目标岗位最相关的项目/技能描述（200字内）…" style="width:100%;box-sizing:border-box;margin-top:4px;font-size:.9em;resize:vertical"></textarea></label>
       <details class="advanced" open>
         <summary>数据源</summary>
         <details class="advanced" open>
@@ -157,6 +158,11 @@
     </div>
     <div id="feedGrid" class="feed-grid" role="list" hidden></div>
     <div id="feedSections" class="feed-sections" hidden></div>
+    <div id="ragSearchBar" class="rag-search-bar" hidden>
+      <input id="ragSearchInput" type="search" placeholder="语义搜索（如：Spark shuffle 原理）" autocomplete="off" />
+      <button id="ragSearchBtn" type="button" class="ghost">搜索</button>
+    </div>
+    <div id="ragResults" class="rag-results" hidden></div>
     <ol id="bankListView" class="bank-rank-list" hidden></ol>
     <div id="bankSections" class="bank-sections" hidden></div>
     <div id="techStackPanel" class="tech-stack-panel" hidden></div>

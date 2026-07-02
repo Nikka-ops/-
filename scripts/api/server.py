@@ -444,6 +444,61 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         )
         return 200, pkg.to_dict()
 
+    if route == "/api/rag/build":
+        # 为指定 bank slug 构建 embedding 索引
+        slug = (body or {}).get("slug") or ""
+        if not slug:
+            return 400, {"error": "slug required"}
+        from scripts.corpus.rag import build_index, has_index
+        bundle = load_bank_bundle(banks_dir(), slug) or {}
+        ui = bundle.get("question_bank_ui") or {}
+        questions = (ui.get("questions") or [])[:2000]
+        if not questions:
+            return 404, {"error": "no questions found for slug"}
+        ok = build_index(banks_dir(), slug, questions)
+        if not ok:
+            return 500, {"error": "embedding failed — check DEEPSEEK_API_KEY"}
+        return 200, {"slug": slug, "indexed": len(questions)}
+
+    if route == "/api/rag/search":
+        data = dict(body or {})
+        slug = str(data.get("slug") or "")
+        query = str(data.get("query") or "").strip()
+        if not slug or not query:
+            return 400, {"error": "slug and query required"}
+        from scripts.corpus.rag import search, has_index
+        if not has_index(banks_dir(), slug):
+            return 404, {"error": "index_not_built", "hint": "call /api/rag/build first"}
+        results = search(
+            banks_dir(), slug, query,
+            top_k=int(data.get("top_k") or 10),
+            topic_filter=data.get("topic_filter") or None,
+        )
+        return 200, {"results": results, "query": query}
+
+    if route == "/api/jd-analysis":
+        data = dict(body or {})
+        jd_text = str(data.get("jd_text") or "").strip()
+        slug = str(data.get("slug") or "").strip()
+        if not jd_text:
+            return 400, {"error": "jd_text required"}
+        from scripts.corpus.ai_gate import ai_enabled
+        if not ai_enabled():
+            return 400, {"error": "DEEPSEEK_API_KEY not configured"}
+        # 加载题库
+        if slug:
+            bundle = load_bank_bundle(banks_dir(), slug) or {}
+        else:
+            all_banks = list_banks(banks_dir())
+            bundle = load_bank_bundle(banks_dir(), all_banks[0]["slug"]) if all_banks else {}
+        ui = bundle.get("question_bank_ui") or {}
+        questions = (ui.get("questions") or [])[:60]
+        from scripts.jobs.jd_analysis import analyze_jd_coverage
+        result = analyze_jd_coverage(jd_text, questions)
+        if result is None:
+            return 500, {"error": "AI analysis failed"}
+        return 200, result
+
     if route == "/api/xhs/scrape-safe":
         from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
         from scripts.scrape.xhs_export import run_safe_xhs_scrape
