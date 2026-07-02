@@ -132,6 +132,9 @@ class BossCdpConnector(JobConnector):
                 seen.add(fp)
                 all_jobs.append(job)
 
+        if self._with_details and all_jobs:
+            self._enrich_descriptions(page_ws, all_jobs[: min(len(all_jobs), max_per_query * 2)])
+
         if not all_jobs and errors:
             return JobSearchResult.degraded(self.name, "; ".join(errors))
         return JobSearchResult.ok(all_jobs, f"{len(all_jobs)} jobs via CDP")

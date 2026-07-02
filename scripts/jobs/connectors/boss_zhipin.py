@@ -28,6 +28,9 @@ _CITY_CODES: dict[str, str] = {
 _DETAIL_API = "https://www.zhipin.com/wapi/zpgeek/job/detail.json"
 
 
+from scripts.jobs.boss_activity import apply_boss_activity_to_job
+
+
 def parse_boss_detail(payload: dict) -> str:
     """Parse Boss直聘 detail.json response into job description text."""
     if payload.get("code") != 0:
@@ -48,6 +51,7 @@ def apply_boss_detail(job: JobPosting, payload: dict) -> None:
         job.description = desc
         if job.extra:
             job.extra["needs_detail_fetch"] = False
+    apply_boss_activity_to_job(job, payload)
 
 
 def _resolve_city_code(city: str | None) -> str:
@@ -112,6 +116,7 @@ def parse_boss_joblist(payload: dict, *, fetch_detail: bool = False) -> list[Job
                     "boss_name": item.get("bossName"),
                     "boss_title": item.get("bossTitle"),
                     "security_id": item.get("securityId"),
+                    "boss_online": bool(item.get("bossOnline")),
                     "needs_detail_fetch": not description and fetch_detail,
                 },
             )

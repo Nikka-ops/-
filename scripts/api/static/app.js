@@ -608,6 +608,7 @@ function setViewMode(mode) {
   $("exportBank").hidden = mode === "jobs";
   $("exportMd").hidden = mode === "jobs";
   $("exportJobs").hidden = mode !== "jobs";
+  $("genPrepBtn").hidden = mode !== "bank";
   syncSourceFilterBar();
   syncBankFilterBar();
   renderCompanyChips();
@@ -1727,6 +1728,81 @@ $("exportJobs").addEventListener("click", () => {
 $("toggleSettings").addEventListener("click", openDrawer);
 if ($("heroOpenSettings")) $("heroOpenSettings").addEventListener("click", openDrawer);
 if ($("heroFetchJobs"))    $("heroFetchJobs").addEventListener("click", runFetchJobs);
+
+// ── 生成备考包 ─────────────────────────────────────────────────────────────
+async function runGenPrep() {
+  const btn = $("genPrepBtn");
+  const role = $("role")?.value?.trim() || currentBank?.role || "数据开发";
+  const companies = (currentBank?.companies || []);
+  const resumeText = localStorage.getItem("ir_resume_text") || "";
+
+  btn.disabled = true;
+  btn.textContent = "⏳ 生成中…";
+
+  try {
+    const res = await fetch("/api/prep", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, companies, resume_text: resumeText }),
+    });
+    const pkg = await res.json();
+    if (!res.ok) throw new Error(pkg.error || "生成失败");
+    showPrepModal(pkg);
+  } catch (e) {
+    alert("备考包生成失败：" + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✨ 生成备考包";
+  }
+}
+
+function showPrepModal(pkg) {
+  const hasChains = (pkg.followup_chains || []).length > 0;
+  const hasMd = pkg.prep_md?.trim();
+
+  let html = `<h2 style="margin:0 0 16px">✨ ${pkg.role} 备考包</h2>`;
+
+  if (pkg.mode === "heuristic") {
+    html += `<p class="hint warn-hint">未配置 DeepSeek API Key，仅展示题目列表（启发式模式）。</p>`;
+  }
+
+  if (hasMd) {
+    // 简单 Markdown 渲染（加粗/标题/列表）
+    const mdHtml = pkg.prep_md
+      .replace(/^### (.+)$/gm, "<h4>$1</h4>")
+      .replace(/^## (.+)$/gm, "<h3>$1</h3>")
+      .replace(/^# (.+)$/gm, "<h2>$1</h2>")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/^- (.+)$/gm, "<li>$1</li>")
+      .replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>")
+      .replace(/\n\n/g, "</p><p>")
+      .replace(/^(?!<[hup])/gm, "");
+    html += `<div class="prep-md">${mdHtml}</div>`;
+  }
+
+  if (hasChains) {
+    html += `<h3 style="margin:20px 0 10px">🔗 项目追问链</h3>`;
+    for (const c of pkg.followup_chains) {
+      html += `<div class="followup-card">
+        <div class="followup-anchor">📌 ${c.resume_anchor}</div>
+        <div class="followup-trigger">问：${c.seed_question}</div>
+        <ul>${c.followups.map(f => `<li>${f}</li>`).join("")}</ul>
+        ${c.is_grounded ? '<span class="pill grounded-pill">有据可查</span>' : ""}
+      </div>`;
+    }
+  }
+
+  // 下载按钮
+  html += `<div style="margin-top:20px;display:flex;gap:8px">
+    <button class="ghost" onclick="downloadBlob('备考包.md', ${JSON.stringify(pkg.prep_md || "")}, 'text/markdown')">下载 Markdown</button>
+    <button class="ghost" onclick="downloadBlob('备考包.json', JSON.stringify(${JSON.stringify(pkg)}, null, 2), 'application/json')">下载 JSON</button>
+  </div>`;
+
+  $("modalBody").innerHTML = html;
+  $("cardModal").hidden = false;
+}
+
+$("genPrepBtn").addEventListener("click", runGenPrep);
 
 // job type tabs
 $("jobTypeBar").addEventListener("click", (e) => {

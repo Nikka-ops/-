@@ -17,6 +17,7 @@ class RawPost:
     extraction_quality: str = "text_only"  # text_only | ocr_ok | ocr_low_quality
     company: str | None = None
     role: str | None = None
+    ai_topics: list[str] = field(default_factory=list)  # DeepSeek-inferred topic hints for this post
 
     def __post_init__(self) -> None:
         if not self.locator_text:
@@ -57,6 +58,7 @@ class Question:
     modality_origin: str = "text"  # text | ocr | vision
     variants: list[str] = field(default_factory=list)  # paraphrases merged into this cluster
     cluster_id: str = ""
+    answer: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -66,6 +68,7 @@ class Question:
         data = dict(d)
         data.setdefault("variants", [])
         data.setdefault("cluster_id", "")
+        data.setdefault("answer", "")
         allowed = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in allowed})
 

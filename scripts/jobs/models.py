@@ -25,7 +25,12 @@ class JobPosting:
     extra: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        from scripts.corpus.company_normalize import normalize_company_name
+
+        d = asdict(self)
+        if d.get("company"):
+            d["company"] = normalize_company_name(str(d["company"])) or d["company"]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "JobPosting":

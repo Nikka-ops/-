@@ -411,6 +411,39 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         result = run_pipeline(config)
         return 200, result.to_dict()
 
+    if route == "/api/prep":
+        # Prep Agent 内化：服务端全自动执行步骤 4–8
+        if not body or not body.get("role"):
+            return 400, {"error": "role is required"}
+        from scripts.corpus.prep_agent import build_prep_package
+        from scripts.corpus.ai_gate import ai_enabled
+        data = dict(body or {})
+        role = str(data.get("role") or "数据开发")
+        companies = [str(c).strip() for c in (data.get("companies") or []) if str(c).strip()]
+        resume_text = str(data.get("resume_text") or "")
+        mode = "auto" if ai_enabled() else "heuristic"
+
+        # 加载最新题库
+        all_banks = list_banks(banks_dir())
+        role_banks = [b for b in all_banks if role in (b.get("role") or "")]
+        top_questions = []
+        if role_banks:
+            bundle = load_bank_bundle(banks_dir(), role_banks[0]["slug"]) or {}
+            ui = bundle.get("question_bank_ui") or {}
+            top_questions = (ui.get("questions") or [])[:40]
+
+        from scripts.models import Question
+        qs = [Question.from_dict(q) if isinstance(q, dict) else q for q in top_questions]
+
+        pkg = build_prep_package(
+            role=role,
+            companies=companies,
+            top_questions=qs,
+            resume_text=resume_text,
+            mode=mode,
+        )
+        return 200, pkg.to_dict()
+
     if route == "/api/xhs/scrape-safe":
         from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
         from scripts.scrape.xhs_export import run_safe_xhs_scrape
@@ -647,6 +680,7 @@ class InterviewRadarHandler(BaseHTTPRequestHandler):
         except FileNotFoundError as exc:
             _json_response(self, 404, {"error": "not_found", "message": str(exc)})
         except Exception as exc:  # noqa: BLE001
+            import traceback; traceback.print_exc()
             _json_response(self, 500, {"error": "internal_error", "message": str(exc)})
 
 

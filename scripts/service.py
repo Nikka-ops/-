@@ -16,7 +16,6 @@ from scripts.corpus.ingest_fallback import (
 )
 from scripts.config import cache_dir
 from scripts.connectors.nowcoder import NowCoderConnector
-from scripts.connectors.xiaohongshu import XiaohongshuConnector
 from scripts.corpus.bank_cache import (
     bank_slug,
     frequency_report_path,
@@ -29,7 +28,8 @@ from scripts.corpus.bank_cache import (
     write_meta,
 )
 from scripts.corpus.classify import classify_search_queries
-from scripts.corpus.role_match import annotate_post, filter_posts_for_bank
+from scripts.corpus.role_match import annotate_post, matches_target_role
+from scripts.corpus.post_filter import filter_ingest_posts
 from scripts.corpus.export_bank import build_question_bank, render_frequency_report
 from scripts.corpus.pipeline import build_ranked_questions
 from scripts.corpus.personalize import (
@@ -39,16 +39,15 @@ from scripts.corpus.personalize import (
     render_prep_package,
 )
 from scripts.corpus.post_dedupe import dedupe_raw_posts
-from scripts.corpus.post_supplement import supplement_posts_for_role
 from scripts.corpus.recency import RECENCY_WINDOW_DAYS, filter_recent
 from scripts.corpus.store import load_raw_posts
 from scripts.discover.nowcoder_urls import discover_nowcoder_urls
 from scripts.discover.nowcoder_moments import search_nowcoder_moments
 from scripts.models import RawPost
-from scripts.ocr.post_images import enrich_posts_image_ocr
+from scripts.ocr.post_images import download_images_batch, enrich_posts_image_ocr
 from scripts.resume_extract import ResumeExtraction, extract_resume
-from scripts.scrape.mediacrawler_driver import MediaCrawlerDriver, MediaCrawlerScrapeError
-from scripts.scrape.xhs_export import load_xhs_posts_from_exports
+from scripts.scrape.spider_xhs_driver import SpiderXHSDriver, SpiderXHSScrapeError
+from scripts.scrape.xhs_export import load_xhs_posts_from_exports, run_safe_xhs_scrape
 
 
 @dataclass
@@ -75,6 +74,7 @@ class RunConfig:
     xhs_deep: bool = True
     xhs_priority: bool = True
     xhs_min_posts_skip_nowcoder: int = 5
+    skip_rolling_nowcoder: bool = False
     keywords: list[str] = field(default_factory=list)
     top_n: int = 30
     no_semantic_merge: bool = False
@@ -136,8 +136,12 @@ def ingest_posts(config: RunConfig, queries: list[str]) -> tuple[list[RawPost], 
         if not cached:
             raise FileNotFoundError(f"No cached raw_posts for slug {slug}")
         cached = [annotate_post(p) for p in cached]
-        cached = enrich_posts_image_ocr(cached)
-        return cached, {"mode": "rebuild"}, slug
+        cached = download_images_batch(cached)
+        cached = enrich_posts_image_ocr(cached, enable_ocr=config.xhs_deep)
+        cached, filter_meta = filter_ingest_posts(
+            cached, config.role, skip_role=config.skip_role_filter
+        )
+        return cached, {"mode": "rebuild", **filter_meta}, slug
 
     if not config.refresh and is_fresh(cache_root, slug, config.cache_ttl_days, today=date.today()):
         cached = load_cached_raw_posts(cache_root, slug)
@@ -176,11 +180,19 @@ def ingest_posts(config: RunConfig, queries: list[str]) -> tuple[list[RawPost], 
             xhs_loaded_count = len(export_posts)
         elif xhs_export_meta.get("status") == "missing" and config.xhs_priority:
             ingest_warnings.append(
-                "小红书本地导出为空 — 先运行: uv run python -m scripts.tools.xhs_scrape_safe --role-id ai_app"
+                "小红书本地导出为空 — 面经主源缺失。请先配置 XHS_WEB_SESSION，"
+                "再运行 daily_scrape 或 Web UI「小红书抓取」"
             )
 
     rolling_nc = cache_dir() / "daily" / "rolling_nowcoder_posts.json"
-    if rolling_nc.is_file() and not config.rebuild_only:
+    xhs_role_matched = 0
+    if export_posts := [p for p in posts if p.source == "xiaohongshu"]:
+        xhs_role_matched = sum(
+            1 for p in (annotate_post(p) for p in export_posts) if matches_target_role(p, config.role)
+        )
+    if xhs_loaded_count:
+        sources["xhs_role_matched"] = xhs_role_matched
+    if rolling_nc.is_file() and not config.rebuild_only and not config.skip_rolling_nowcoder:
         try:
             rolling_posts = load_raw_posts(rolling_nc)
             if rolling_posts:
@@ -192,19 +204,20 @@ def ingest_posts(config: RunConfig, queries: list[str]) -> tuple[list[RawPost], 
         except (OSError, ValueError, json.JSONDecodeError):
             ingest_warnings.append(f"无法读取每日牛客累积文件: {rolling_nc}")
 
-    nowcoder_urls = list(config.nowcoder_urls)
-    discover_live = config.discover_nowcoder and not explicit_raw and not config.rebuild_only
-    if (
+    skip_live_nc = (
         config.xhs_priority
-        and xhs_loaded_count >= config.xhs_min_posts_skip_nowcoder
-        and discover_live
-    ):
+        and xhs_role_matched >= config.xhs_min_posts_skip_nowcoder
+    )
+
+    discover_live = config.discover_nowcoder and not explicit_raw and not config.rebuild_only
+    if skip_live_nc and discover_live:
         discover_live = False
         sources["nowcoder_skipped"] = {
-            "reason": "xhs_priority",
-            "xhs_posts": xhs_loaded_count,
+            "reason": "xhs_role_matched",
+            "xhs_role_matched": xhs_role_matched,
+            "xhs_posts_total": xhs_loaded_count,
         }
-
+    nowcoder_urls = list(config.nowcoder_urls)
     if discover_live:
         discovered, discover_meta = discover_nowcoder_urls(
             queries,
@@ -235,75 +248,36 @@ def ingest_posts(config: RunConfig, queries: list[str]) -> tuple[list[RawPost], 
 
     if config.xhs_live:
         try:
-            driver = MediaCrawlerDriver()
-            keywords = queries[:6]
-            export = driver.scrape_xhs(
-                keywords,
-                login_type="cookie",
-                max_keywords_per_batch=2,
-                batch_pause_seconds=45.0,
-            )
-            xhs = XiaohongshuConnector(
-                export_path=str(export),
-                enable_image_ocr=config.xhs_deep,
-            )
-            live_result = xhs.search([])
+            scrape_meta = run_safe_xhs_scrape(queries[:6], limit_keywords=True)
+            live_posts, export_meta = load_xhs_posts_from_exports(enable_ocr=config.xhs_deep)
             sources["xiaohongshu_live"] = {
-                "status": live_result.status,
-                "message": live_result.message,
-                "export": str(export),
-                "keywords": keywords,
+                "status": export_meta.get("status", "ok"),
+                "message": export_meta.get("message", ""),
+                "keywords": queries[:6],
+                "export": scrape_meta.get("export_path"),
                 "ocr_mode": "deep" if config.xhs_deep else "fast",
+                "driver": "spider_xhs",
             }
-            posts.extend(live_result.posts)
-        except (MediaCrawlerScrapeError, FileNotFoundError, ValueError) as exc:
+            posts.extend(live_posts)
+        except (SpiderXHSScrapeError, FileNotFoundError, ValueError) as exc:
             sources["xiaohongshu_live"] = {"status": "degraded", "message": str(exc)}
-
-    supplement_meta: dict = {}
-    if not config.rebuild_only and (
-        ingest_attempted_live(config)
-        or discover_live
-        or xhs_loaded_count > 0
-    ):
-        posts, supplement_meta = supplement_posts_for_role(
-            posts,
-            config.role,
-            config.role_id or "",
-            cache_root,
-        )
-        if supplement_meta.get("from_banks") or supplement_meta.get("from_files"):
-            sources["post_supplement"] = supplement_meta
 
     posts = dedupe_raw_posts(posts)
     posts = nonempty_posts(posts)
     posts = [annotate_post(p) for p in posts]
-    posts = enrich_posts_image_ocr(posts)
-    from scripts.corpus.post_ai_filter import filter_interview_experience_posts_hybrid
-
-    posts, non_interview_dropped, filter_meta = filter_interview_experience_posts_hybrid(posts)
-    if non_interview_dropped:
-        sources["non_interview_dropped"] = len(non_interview_dropped)
-    if filter_meta.get("ai_enabled"):
-        sources["post_ai_filter"] = {
-            k: filter_meta[k]
-            for k in (
-                "rule_keep",
-                "rule_drop",
-                "ai_review",
-                "ai_keep",
-                "ai_drop",
-                "ai_cache_hits",
-                "ai_errors",
-            )
-            if k in filter_meta
-        }
-    kept, dropped = filter_posts_for_bank(posts, config.role)
-    if config.skip_role_filter:
-        kept, dropped = posts, []
-    elif dropped:
-        sources["role_filter_dropped"] = len(dropped)
-
-    posts = kept
+    posts = download_images_batch(posts)  # always cache images locally before OCR/display
+    posts = enrich_posts_image_ocr(posts, enable_ocr=config.xhs_deep)
+    # Vision 补读：对 OCR 低置信度帖子调多模态模型
+    from scripts.config import deepseek_api_key as _key
+    from scripts.ocr.vision_fallback import run_vision_fallback_batch
+    if _key():
+        _vision_count = run_vision_fallback_batch(posts, max_posts=30)
+        if _vision_count:
+            sources["vision_fallback"] = {"count": _vision_count}
+    posts, filter_meta = filter_ingest_posts(
+        posts, config.role, skip_role=config.skip_role_filter
+    )
+    sources.update(filter_meta)
 
     if not posts:
         if ingest_attempted_live(config):
@@ -339,6 +313,7 @@ def build_bank_from_posts(
     companies_filter = config.companies if config.filter_company_questions else None
     ranked = build_ranked_questions(
         posts,
+        role=config.role,
         today=date.today(),
         semantic_merge=not config.no_semantic_merge,
         merge_threshold=config.merge_threshold,

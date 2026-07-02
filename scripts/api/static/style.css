@@ -1406,3 +1406,46 @@ footer {
   border-color: #ddd6fe;
   font-weight: 600;
 }
+
+/* ── Prep 备考包 ─────────────────────────────────────────────────────────── */
+.prep-md {
+  font-size: .9rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+.prep-md h2, .prep-md h3, .prep-md h4 { margin: 1em 0 .4em; color: var(--text); }
+.prep-md ul { padding-left: 1.2em; margin: .4em 0; }
+.prep-md li { margin: .25em 0; }
+.prep-md strong { color: var(--indigo); }
+
+.followup-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.followup-anchor {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--indigo);
+  margin-bottom: 4px;
+}
+.followup-trigger {
+  font-size: .9rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.followup-card ul {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--muted);
+  font-size: .85rem;
+}
+.pill.grounded-pill {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
+  font-size: .72rem;
+}
