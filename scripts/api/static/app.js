@@ -609,6 +609,8 @@ function setViewMode(mode) {
   $("exportMd").hidden = mode === "jobs";
   $("exportJobs").hidden = mode !== "jobs";
   $("genPrepBtn").hidden = mode !== "bank";
+  if ($("trendsBtn")) $("trendsBtn").hidden = mode !== "posts";
+  if ($("mockBtn")) $("mockBtn").hidden = mode !== "bank";
   if ($("ragSearchBar")) $("ragSearchBar").hidden = mode !== "bank";
   if ($("ragResults") && mode !== "bank") $("ragResults").hidden = true;
   syncSourceFilterBar();
@@ -709,7 +711,10 @@ function renderQuestionItem(q, query, displayRank) {
   }).join("");
   const ansBadge = q.answer ? '<span class="pill answer-pill">有解答</span>' : "";
   const rankNum = displayRank ?? q.rank ?? "";
-  return `<li class="cluster-item question-item" data-id="${escapeHtml(q.cluster_id || String(q.rank))}">
+  const qid = q.cluster_id || String(q.rank);
+  const mastery = getMastery(qid);
+  const masteryDot = `<span class="mastery-dot mastery-${mastery}" title="${mastery === 'known' ? '已掌握' : mastery === 'fuzzy' ? '模糊' : '待学'}" data-qid="${escapeHtml(qid)}"></span>`;
+  return `<li class="cluster-item question-item" data-id="${escapeHtml(qid)}">
     <div class="cluster-rank">#${rankNum}</div>
     <div class="cluster-body">
       <div class="cluster-title">${highlightText(q.text, query)}</div>
@@ -723,6 +728,7 @@ function renderQuestionItem(q, query, displayRank) {
       </div>
       ${(q.variants || []).length ? `<p class="cluster-variants">同类：${escapeHtml(q.variants.slice(0, 2).join("；"))}</p>` : ""}
     </div>
+    ${masteryDot}
   </li>`;
 }
 
@@ -1806,6 +1812,153 @@ function showPrepModal(pkg) {
 }
 
 $("genPrepBtn").addEventListener("click", runGenPrep);
+if ($("trendsBtn")) $("trendsBtn").addEventListener("click", runTrends);
+if ($("mockBtn")) $("mockBtn").addEventListener("click", runMockInterview);
+
+// ── 错题本 / 掌握度 ─────────────────────────────────────────────────────────
+const MASTERY_LEVELS = ["unknown", "fuzzy", "known"];
+
+function getMastery(qid) {
+  return localStorage.getItem(`ir_m_${qid}`) || "unknown";
+}
+function setMastery(qid, level) {
+  localStorage.setItem(`ir_m_${qid}`, level);
+}
+function cycleMastery(qid) {
+  const cur = getMastery(qid);
+  const next = MASTERY_LEVELS[(MASTERY_LEVELS.indexOf(cur) + 1) % MASTERY_LEVELS.length];
+  setMastery(qid, next);
+  return next;
+}
+
+// Delegate mastery-dot clicks (works on dynamically rendered lists)
+document.addEventListener("click", (e) => {
+  const dot = e.target.closest(".mastery-dot");
+  if (!dot) return;
+  e.stopPropagation();
+  const qid = dot.dataset.qid;
+  const next = cycleMastery(qid);
+  dot.className = `mastery-dot mastery-${next}`;
+  dot.title = next === "known" ? "已掌握" : next === "fuzzy" ? "模糊" : "待学";
+});
+
+// ── 考点趋势 ────────────────────────────────────────────────────────────────
+async function runTrends() {
+  const slug = currentSlug;
+  if (!slug) { alert("请先加载题库"); return; }
+  const btn = document.getElementById("trendsBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "分析中…"; }
+  try {
+    const data = await postJson("/api/trends", { slug });
+    showTrendsModal(data);
+  } catch (e) {
+    alert("趋势分析失败：" + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "考点趋势"; }
+  }
+}
+
+function showTrendsModal(d) {
+  const tags = (arr, color) => arr.slice(0, 6).map(t =>
+    `<span class="pill" style="background:${color};color:#fff;margin:2px">${escapeHtml(t)}</span>`
+  ).join("");
+
+  let html = `<h2 style="margin:0 0 4px">考点趋势播报</h2>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 16px">${escapeHtml(d.recent_window)} vs ${escapeHtml(d.baseline_window)}</p>`;
+
+  if (d.broadcast) {
+    html += `<p style="line-height:1.8;margin-bottom:16px">${escapeHtml(d.broadcast)}</p><hr style="border:none;border-top:1px solid var(--border);margin:16px 0">`;
+  }
+
+  if (d.new?.length)     html += `<p><strong>新兴考点</strong><br>${tags(d.new, "#10b981")}</p>`;
+  if (d.rising?.length)  html += `<p><strong>升温考点</strong><br>${tags(d.rising, "#f59e0b")}</p>`;
+  if (d.falling?.length) html += `<p><strong>降温考点</strong><br>${tags(d.falling, "#94a3b8")}</p>`;
+
+  if (d.topics?.length) {
+    html += `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:12px">
+      <thead><tr style="border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:5px 8px">考点</th>
+        <th style="text-align:center;padding:5px 8px">近期</th>
+        <th style="text-align:center;padding:5px 8px">前期</th>
+        <th style="text-align:center;padding:5px 8px">变化</th>
+      </tr></thead><tbody>`;
+    for (const row of d.topics.slice(0, 15)) {
+      const pct = row.delta_pct;
+      const color = pct > 50 ? "#10b981" : pct < -30 ? "#94a3b8" : "var(--text-2)";
+      const arrow = pct > 50 ? "↑" : pct < -30 ? "↓" : "→";
+      html += `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:5px 8px">${escapeHtml(row.topic)}</td>
+        <td style="text-align:center;padding:5px 8px">${row.recent}</td>
+        <td style="text-align:center;padding:5px 8px">${row.baseline}</td>
+        <td style="text-align:center;padding:5px 8px;color:${color};font-weight:600">${arrow} ${pct === 999 ? "新" : pct + "%"}</td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+
+  $("modalBody").innerHTML = html;
+  $("cardModal").hidden = false;
+}
+
+// ── 模拟面试 ────────────────────────────────────────────────────────────────
+let _mockSession = null;
+
+async function runMockInterview() {
+  const role = currentBank?.role || "数据开发";
+  const slug = currentSlug || "";
+  try {
+    const data = await postJson("/api/mock/start", { role, slug });
+    if (data.error) throw new Error(data.error);
+    _mockSession = { id: data.session_id, total: data.total };
+    showMockModal(data.question, data.progress, "");
+  } catch (e) {
+    alert("模拟面试启动失败：" + e.message);
+  }
+}
+
+function showMockModal(question, progress, lastComment) {
+  $("modalBody").innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0;font-size:16px">模拟面试</h2>
+      <span style="font-size:12px;color:var(--muted)">${escapeHtml(progress || "")}</span>
+    </div>
+    ${lastComment ? `<div class="mock-comment">${escapeHtml(lastComment)}</div>` : ""}
+    <div class="mock-question">${escapeHtml(question)}</div>
+    <textarea id="mockAnswer" rows="5" placeholder="输入你的回答…" style="width:100%;box-sizing:border-box;margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font);font-size:13px;resize:vertical;background:var(--surface);color:var(--text)"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="primary" onclick="submitMockAnswer()" style="flex:1">提交回答</button>
+      <button class="ghost" onclick="$('cardModal').hidden=true">结束面试</button>
+    </div>`;
+  $("cardModal").hidden = false;
+  document.getElementById("mockAnswer")?.focus();
+}
+
+async function submitMockAnswer() {
+  const ans = (document.getElementById("mockAnswer")?.value || "").trim();
+  if (!ans) return;
+  const btn = document.querySelector("#modalBody button.primary");
+  if (btn) { btn.disabled = true; btn.textContent = "等待面试官…"; }
+
+  try {
+    const data = await postJson("/api/mock/reply", {
+      session_id: _mockSession?.id,
+      answer: ans,
+    });
+    if (data.error) throw new Error(data.error);
+    if (data.finished) {
+      $("modalBody").innerHTML = `
+        <h2 style="margin:0 0 12px">面试结束</h2>
+        <div class="mock-comment">${escapeHtml(data.comment)}</div>
+        <p style="margin-top:16px;color:var(--muted);font-size:13px">感谢参与！可重新点击「模拟面试」再次练习。</p>
+        <button class="primary" onclick="$('cardModal').hidden=true" style="margin-top:12px">关闭</button>`;
+    } else {
+      showMockModal(data.next_question, data.progress, data.comment);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "提交回答"; }
+    alert("提交失败：" + e.message);
+  }
+}
 
 // ── RAG 语义搜索 ────────────────────────────────────────────────────────────
 let _ragBuilding = false;

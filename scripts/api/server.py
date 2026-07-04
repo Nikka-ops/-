@@ -499,6 +499,62 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
             return 500, {"error": "AI analysis failed"}
         return 200, result
 
+    # ── 考点趋势 ────────────────────────────────────────────────────────────
+    if route == "/api/trends":
+        data = dict(body or {})
+        slug = str(data.get("slug") or "").strip()
+        if not slug:
+            all_banks = list_banks(banks_dir())
+            slug = all_banks[0]["slug"] if all_banks else ""
+        if not slug:
+            return 404, {"error": "no bank found"}
+        bundle = load_bank_bundle(banks_dir(), slug) or {}
+        posts = bundle.get("posts") or []
+        from scripts.corpus.trends import compute_trends, ai_trend_broadcast
+        trend = compute_trends(posts)
+        # AI 叙述（可选，失败不阻断）
+        try:
+            from scripts.corpus.ai_gate import ai_enabled
+            if ai_enabled():
+                trend["broadcast"] = ai_trend_broadcast(trend)
+        except Exception:
+            trend["broadcast"] = ""
+        return 200, trend
+
+    # ── 模拟面试 ────────────────────────────────────────────────────────────
+    if route == "/api/mock/start":
+        data = dict(body or {})
+        role = str(data.get("role") or "数据开发")
+        slug = str(data.get("slug") or "").strip()
+        if not slug:
+            all_banks = list_banks(banks_dir())
+            role_banks = [b for b in all_banks if role in (b.get("role") or "")]
+            slug = (role_banks or all_banks or [{}])[0].get("slug", "")
+        questions = []
+        if slug:
+            bundle = load_bank_bundle(banks_dir(), slug) or {}
+            ui = bundle.get("question_bank_ui") or {}
+            questions = (ui.get("questions") or [])[:60]
+        if not questions:
+            return 404, {"error": "no questions in bank"}
+        from scripts.corpus.mock_interview import start_session
+        sid, first_q = start_session(role, questions, max_questions=8)
+        if not sid:
+            return 500, {"error": "failed to start session"}
+        return 200, {"session_id": sid, "question": first_q, "total": min(8, len(questions)), "progress": f"1/{min(8,len(questions))}"}
+
+    if route == "/api/mock/reply":
+        data = dict(body or {})
+        sid = str(data.get("session_id") or "").strip()
+        answer = str(data.get("answer") or "").strip()
+        if not sid or not answer:
+            return 400, {"error": "session_id and answer required"}
+        from scripts.corpus.mock_interview import reply as mock_reply
+        result = mock_reply(sid, answer)
+        if result.get("error"):
+            return 404, result
+        return 200, result
+
     if route == "/api/xhs/scrape-safe":
         from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
         from scripts.scrape.xhs_export import run_safe_xhs_scrape
