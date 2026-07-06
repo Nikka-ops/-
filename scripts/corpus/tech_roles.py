@@ -34,19 +34,42 @@ TECH_ROLES: tuple[TechRole, ...] = (
     TechRole("llm", "大模型", "大模型", keywords=("LLM", "预训练", "SFT", "RLHF")),
     TechRole(
         "ai_app",
-        "AI/Agent 应用开发",
-        "AI 应用开发",
-        keywords=("RAG", "LangChain", "Agent", "MCP", "应用", "工具调用", "AI应用"),
+        "Agent 开发",
+        "Agent 开发",
+        keywords=("RAG", "LangChain", "Agent", "MCP", "应用", "工具调用", "AI应用", "智能体"),
     ),
-    TechRole("data", "数据开发", "数据开发", keywords=("Spark", "Hive", "ETL", "数仓")),
+    TechRole(
+        "data",
+        "数据开发",
+        "数据开发",
+        keywords=(
+            "数开",
+            "Spark",
+            "Hive",
+            "Flink",
+            "ETL",
+            "数仓",
+            "数据仓库",
+            "离线数仓",
+            "实时数仓",
+            "湖仓",
+            "大数据开发",
+            "数据平台",
+            "数据开发工程师",
+            "数仓工程师",
+            "ODS",
+            "DWD",
+        ),
+    ),
     TechRole("data_analyst", "数据分析", "数据分析", keywords=("SQL", "指标", "BI")),
     TechRole("qa", "测试开发", "测试开发", keywords=("自动化测试", "QA", "测开")),
+    TechRole("product", "产品", "产品", keywords=("产品经理", "产品岗", "商业产品")),
     TechRole("client", "客户端开发", "客户端开发", keywords=("Android", "iOS", "Flutter")),
     TechRole("infra", "基础架构", "基础架构", keywords=("K8s", "SRE", "运维")),
     TechRole("security", "安全工程师", "安全工程师", keywords=("渗透", "安全")),
 )
 
-DEFAULT_ROLE_ID = "ai_app"
+DEFAULT_ROLE_ID = "data"
 
 
 def canonical_role_id(role_id: str | None) -> str:
@@ -70,6 +93,13 @@ def list_tech_roles() -> list[dict]:
     return [r.to_dict() for r in TECH_ROLES]
 
 
+def list_focus_tech_roles() -> list[dict]:
+    from scripts.config import focus_role_ids
+
+    allowed = set(focus_role_ids())
+    return [r.to_dict() for r in TECH_ROLES if r.id in allowed]
+
+
 def get_tech_role(role_id: str) -> TechRole | None:
     rid = canonical_role_id(role_id)
     if not rid:
@@ -89,7 +119,7 @@ def resolve_role_label(role_id: str | None = None, role_text: str | None = None)
     if text:
         return text
     default = get_tech_role(DEFAULT_ROLE_ID)
-    return default.search_as if default else "AI 应用开发"
+    return default.search_as if default else "数据开发"
 
 
 def parse_role_ids(role_id: str = "", role_ids: str = "") -> list[str]:
@@ -104,5 +134,8 @@ def parse_role_ids(role_id: str = "", role_ids: str = "") -> list[str]:
                 out.append(rid)
         if out:
             return out
-    rid = canonical_role_id((role_id or "").strip()) or DEFAULT_ROLE_ID
-    return [rid]
+    if (role_id or "").strip():
+        return [canonical_role_id(role_id.strip())]
+    from scripts.config import focus_role_ids
+
+    return focus_role_ids()

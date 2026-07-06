@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from scripts.config import cache_dir, package_root
+from scripts.config import cache_dir, focus_role_ids_csv, package_root
 
 LABEL = "com.interviewradar.daily-scrape"
 PLIST_NAME = f"{LABEL}.plist"
@@ -232,10 +232,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="InterviewRadar 跨平台每日调度安装")
     parser.add_argument("--hour", type=int, default=8, help="每天执行小时 (0-23)")
     parser.add_argument("--minute", type=int, default=0, help="分钟 (0-59)")
-    parser.add_argument("--role-id", default="ai_app")
+    parser.add_argument("--role-id", default="data")
     parser.add_argument(
         "--role-ids",
-        default="",
+        default=focus_role_ids_csv(),
         help="逗号分隔多岗位（设置 INTERVIEWRADAR_DAILY_ROLE_IDS，覆盖 --role-id）",
     )
     parser.add_argument("--uninstall", action="store_true")
@@ -245,8 +245,8 @@ def main(argv: list[str] | None = None) -> int:
         print("hour/minute out of range", file=sys.stderr)
         return 1
 
-    role_ids = args.role_ids.strip()
-    role_id = args.role_id.strip() or "ai_app"
+    role_ids = args.role_ids.strip() or focus_role_ids_csv()
+    role_id = args.role_id.strip() or (role_ids.split(",")[0] if role_ids else "data")
 
     try:
         if args.uninstall:

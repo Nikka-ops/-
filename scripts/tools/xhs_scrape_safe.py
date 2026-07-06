@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe Xiaohongshu scrape via MediaCrawler (low frequency, cookie login).
+"""Safe Xiaohongshu scrape via Spider_XHS (CDP Chrome cookie, low frequency).
 
 推荐工作流（面经以小红书为主、降低封号风险）:
 
@@ -22,7 +22,7 @@ from scripts.corpus.company_catalog import resolve_company_list
 from scripts.config import bootstrap_env, xhs_web_session_configured
 from scripts.scrape.keywords import xhs_keywords_for_role
 from scripts.scrape.xhs_export import run_safe_xhs_scrape
-from scripts.scrape.mediacrawler_driver import MediaCrawlerScrapeError
+from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
 
 
 def _keywords_from_role(role_id: str, companies: list[str]) -> list[str]:
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             batch_size=max(1, args.batch_size),
             pause_seconds=max(15.0, args.pause),
         )
-    except (MediaCrawlerScrapeError, FileNotFoundError, ValueError) as exc:
+    except (SpiderXHSScrapeError, FileNotFoundError, ValueError) as exc:
         print(f"抓取失败: {exc}", file=sys.stderr)
         return 1
 

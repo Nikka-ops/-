@@ -11,8 +11,13 @@ from scripts.config import company_aliases_path
 
 _DEFAULT_SUBSIDIARIES: dict[str, str] = {
     "淘天": "阿里巴巴",
+    "蚂蚁": "阿里巴巴",
+    "蚂蚁集团": "阿里巴巴",
     "WXG": "腾讯",
+    "微信小店": "腾讯",
     "TikTok": "字节跳动",
+    "虾皮": "Shopee",
+    "希音": "Shein",
 }
 
 _DEFAULT_NOT_COMPANIES: frozenset[str] = frozenset(
@@ -33,7 +38,9 @@ _DEFAULT_NOT_COMPANIES: frozenset[str] = frozenset(
         "面试",
         "未标注",
         "其他",
-        "27",
+        "互联网大厂",
+        "社招",
+        "golang",
         "26",
         "25",
         "24",
@@ -47,6 +54,7 @@ _DEFAULT_NOT_COMPANY_PATTERNS: tuple[str, ...] = (
     r"实习$",
     r"^27实习|^26实习|^25实习",
     r"菜鸡|小硕|原力健康",
+    r"社招|golang",
 )
 
 _DEFAULT_PARENT_CANONICAL: dict[str, str] = {

@@ -224,6 +224,18 @@ XHS_WEB_SESSION=<从浏览器 DevTools Application → Cookies 复制>
 
 ---
 
+## 后续规划
+
+详见 [ROADMAP.md](ROADMAP.md)，核心方向：
+
+- **Vision 补读自动化**：OCR 失败图片自动调多模态模型，解锁小红书图片面经
+- **Prep Agent 内化**：服务端自动执行备考包生成，产品端到端闭环
+- **本地语料 RAG**：embedding 向量检索，支持「和我简历相关的题」等语义查询
+- **考点趋势分析**：按周/月聚类，识别升温考点，让「雷达」名副其实
+- **模拟面试 Agent**：对话式技术面/项目深挖/手撕代码
+
+---
+
 ## License
 
 MIT © 2026

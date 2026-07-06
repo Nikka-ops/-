@@ -1,0 +1,21 @@
+# 运行时语料/缓存（456MB+，Agent 不需要读）
+corpus_cache/
+cache/
+*.egg-info/
+
+# 依赖与构建产物
+.venv/
+uv.lock
+__pycache__/
+.pytest_cache/
+
+# 大体积静态资源 / 历史文档
+docs/plans/
+docs/specs/
+tests/fixtures/
+assets/
+
+# 用户私密
+.env
+.env.*
+*.pdf

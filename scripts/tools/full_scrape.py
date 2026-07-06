@@ -6,8 +6,9 @@
 - 小红书全部关键词分批抓取（非每日 8 词）
 - 更高单词条数上限、更长时效窗口
 
-示例:
-  uv run python -m scripts.tools.full_scrape --role-id ai_app --companies all
+示例（小红书为主源，需配置 XHS_WEB_SESSION）:
+
+  uv run python -m scripts.tools.full_scrape --role-id data --companies all
 """
 from __future__ import annotations
 
@@ -22,7 +23,13 @@ from scripts.corpus.company_catalog import resolve_company_list
 from scripts.corpus.recency import filter_recent
 from scripts.corpus.role_match import annotate_post, filter_posts_for_bank
 from scripts.corpus.tech_roles import resolve_role_label
-from scripts.config import bootstrap_env, full_scrape_recency_days, xhs_web_session_configured
+from scripts.config import (
+    bootstrap_env,
+    full_scrape_recency_days,
+    xhs_batch_pause_seconds,
+    xhs_max_keywords_per_run,
+    xhs_web_session_configured,
+)
 from scripts.discover.nowcoder_moments import search_nowcoder_moments
 from scripts.models import RawPost
 from scripts.scrape.keywords import nowcoder_queries_for_role, xhs_keywords_for_role
@@ -34,7 +41,7 @@ from scripts.scrape.scrape_state import (
     rolling_nowcoder_path,
 )
 from scripts.scrape.xhs_export import run_full_xhs_scrape
-from scripts.scrape.mediacrawler_driver import MediaCrawlerScrapeError
+from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
 from scripts.service import RunConfig, run_pipeline
 
 
@@ -54,7 +61,7 @@ def _stage_counts(posts: list[RawPost], role: str, recency_days: int) -> dict:
 def main(argv: list[str] | None = None) -> int:
     bootstrap_env()
     parser = argparse.ArgumentParser(description="InterviewRadar 全量面经抓取")
-    parser.add_argument("--role-id", default="ai_app")
+    parser.add_argument("--role-id", default="data")
     parser.add_argument("--role", default="")
     parser.add_argument(
         "--companies",
@@ -67,11 +74,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--recency-days", type=int, default=0, help="0=用 FULL_SCRAPE_RECENCY_DAYS 环境变量")
     parser.add_argument("--skip-xhs", action="store_true")
     parser.add_argument("--skip-nowcoder", action="store_true")
-    parser.add_argument("--strict-role-filter", action="store_true", help="启用严格岗位过滤（会少约 30% 帖）")
+    parser.add_argument(
+        "--skip-role-filter",
+        action="store_true",
+        help="跳过岗位过滤（仅调试；focus 岗位默认严格过滤）",
+    )
     parser.add_argument("--resume", action="store_true", help="跳过本轮已完成的牛客搜索词")
-    parser.add_argument("--xhs-batch-size", type=int, default=2)
-    parser.add_argument("--xhs-keywords-per-run", type=int, default=8)
-    parser.add_argument("--xhs-pause", type=float, default=90.0)
+    parser.add_argument("--xhs-batch-size", type=int, default=2, help="每批关键词数（反检测建议 2）")
+    parser.add_argument("--xhs-keywords-per-run", type=int, default=0, help="0=用 XHS_MAX_KEYWORDS_PER_RUN（建议 6）")
+    parser.add_argument("--xhs-pause", type=float, default=0, help="批间暂停秒数（0=默认 30）")
     parser.add_argument("--no-rebuild", action="store_true")
     parser.add_argument(
         "--fast-rebuild",
@@ -80,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    skip_role_filter = not args.strict_role_filter
+    skip_role_filter = args.skip_role_filter
 
     companies = resolve_company_list(args.companies)
     role_id = args.role_id.strip()
@@ -103,6 +114,27 @@ def main(argv: list[str] | None = None) -> int:
     xhs_keys = xhs_keywords_for_role(role_id, companies)
     report["nowcoder_query_total"] = len(nc_queries)
     report["xhs_keyword_total"] = len(xhs_keys)
+    xhs_keywords_per_run = args.xhs_keywords_per_run or xhs_max_keywords_per_run()
+    xhs_pause = args.xhs_pause or xhs_batch_pause_seconds()
+
+    if not args.skip_xhs:
+        if not xhs_web_session_configured():
+            report["xhs"]["error"] = "XHS_WEB_SESSION not configured"
+            print("  小红书失败: 未配置 XHS_WEB_SESSION（面经主源，请先配置 .env）")
+        else:
+            print(f"小红书全量（主源）: {len(xhs_keys)} 个词，每轮 {xhs_keywords_per_run} 词，批间 {xhs_pause}s …")
+            try:
+                xhs_out = run_full_xhs_scrape(
+                    xhs_keys,
+                    batch_size=max(1, args.xhs_batch_size),
+                    pause_seconds=max(15.0, xhs_pause),
+                    keywords_per_run=max(1, xhs_keywords_per_run),
+                )
+                report["xhs"] = xhs_out
+                print(f"  小红书完成 {xhs_out.get('batches_run')} 批")
+            except (SpiderXHSScrapeError, FileNotFoundError, ValueError) as exc:
+                report["xhs"]["error"] = str(exc)
+                print(f"  小红书失败: {exc}")
 
     if not args.skip_nowcoder:
         nc_queries_all = list(nc_queries)
@@ -156,26 +188,7 @@ def main(argv: list[str] | None = None) -> int:
             },
         }
         report["stages"]["nowcoder_fetched"] = _stage_counts(all_nc, role_label, recency_days)
-        print(f"  牛客合计 {len(all_nc)} 篇", flush=True)
-
-    if not args.skip_xhs:
-        if not xhs_web_session_configured():
-            report["xhs"]["error"] = "XHS_WEB_SESSION not configured"
-            print("  小红书跳过: 未配置 XHS_WEB_SESSION")
-        else:
-            print(f"小红书全量: {len(xhs_keys)} 个词，每轮 {args.xhs_keywords_per_run} 词 …")
-            try:
-                xhs_out = run_full_xhs_scrape(
-                    xhs_keys,
-                    batch_size=max(1, args.xhs_batch_size),
-                    pause_seconds=max(15.0, args.xhs_pause),
-                    keywords_per_run=max(1, args.xhs_keywords_per_run),
-                )
-                report["xhs"] = xhs_out
-                print(f"  小红书完成 {xhs_out.get('batches_run')} 批")
-            except (MediaCrawlerScrapeError, FileNotFoundError, ValueError) as exc:
-                report["xhs"]["error"] = str(exc)
-                print(f"  小红书失败: {exc}")
+        print(f"  牛客合计 {len(all_nc)} 篇（补充源）", flush=True)
 
     rolling_path = rolling_nowcoder_path()
     if rolling_path.is_file():
@@ -195,11 +208,12 @@ def main(argv: list[str] | None = None) -> int:
             refresh=True,
             discover_nowcoder=False,
             xhs_use_export=True,
-            xhs_priority=False,
+            xhs_priority=True,
             xhs_deep=not fast_rebuild,
             xhs_live=False,
             recency_window_days=recency_days,
             skip_role_filter=skip_role_filter,
+            skip_rolling_nowcoder=args.skip_nowcoder,
         )
         try:
             result = run_pipeline(cfg)
@@ -233,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"报告: {report_path}")
 
     if report.get("bank", {}).get("error"):
+        return 1
+    if report.get("xhs", {}).get("error") and not args.skip_xhs:
         return 1
     return 0
 

@@ -39,6 +39,9 @@ subsidiaries:
   TikTok: 字节跳动
   抖音: 字节跳动
   剪映: 字节跳动
+  飞书: 字节跳动
+  火山引擎: 字节跳动
+  今日头条: 字节跳动
   bytedance: 字节跳动
   字节: 字节跳动
   # 其他常见别名
@@ -72,10 +75,21 @@ subsidiaries:
   iflytek: 科大讯飞
   minimax: MiniMax
   MiniMax: MiniMax
+  Shein: Shein
+  Shopee: Shopee
+  OPPO: OPPO
+  oppo: OPPO
+  vivo: vivo
   bilibili: 哔哩哔哩
   哔哩哔哩: 哔哩哔哩
   b站: 哔哩哔哩
   小红书: 小红书
+  虾皮: Shopee
+  shopee: Shopee
+  shein: Shein
+  SHEIN: Shein
+  希音: Shein
+  微信小店: 腾讯
 
 not_companies:
   - ai
@@ -94,6 +108,7 @@ not_companies:
   - 面试
   - 未标注
   - 其他
+  - 互联网大厂
   - "27"
   - "26"
   - "25"
@@ -106,6 +121,7 @@ not_company_patterns:
   - '实习$'
   - '^27实习|^26实习|^25实习'
   - '菜鸡|小硕|原力健康'
+  - '社招|golang'
 
 parent_canonical:
   字节跳动: 字节跳动
@@ -130,6 +146,10 @@ parent_canonical:
   谷歌: 谷歌
   亚马逊: 亚马逊
   MiniMax: MiniMax
+  Shein: Shein
+  Shopee: Shopee
+  OPPO: OPPO
+  vivo: vivo
   比亚迪: 比亚迪
   蔚来: 蔚来
   理想: 理想

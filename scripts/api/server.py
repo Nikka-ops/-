@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import time as _time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,35 @@ def _resolve_raw_posts(path: str) -> str:
 
 def _local_corpus_path() -> Path | None:
     return resolve_posts_fallback()
+
+
+_BUNDLE_CACHE: dict[str, tuple[float, dict]] = {}  # key → (timestamp, slim_bundle)
+_BUNDLE_TTL = 120.0  # seconds
+
+
+def _get_cached_bundle(key: str) -> dict | None:
+    entry = _BUNDLE_CACHE.get(key)
+    if entry and (_time.monotonic() - entry[0]) < _BUNDLE_TTL:
+        return entry[1]
+    return None
+
+
+def _set_cached_bundle(key: str, bundle: dict) -> None:
+    _BUNDLE_CACHE[key] = (_time.monotonic(), bundle)
+
+
+def _slim_bundle(bundle: dict) -> None:
+    """Strip redundant large fields before sending to client to reduce response size."""
+    # bank.questions and bank.clusters are redundant when question_bank_ui.questions is present.
+    # The JS already prefers question_bank_ui.questions; these save ~5MB.
+    bank = bundle.get("bank")
+    if isinstance(bank, dict):
+        bank.pop("questions", None)
+        bank.pop("clusters", None)
+    # Strip HTML/text rendering fields from posts; JS falls back to raw_text.
+    for p in bundle.get("posts") or []:
+        p.pop("display_html", None)
+        p.pop("display_text", None)
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -319,6 +349,10 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         parsed = urlparse(path)
         companies_raw = parse_qs(parsed.query).get("companies", [""])[0]
         companies = [c.strip() for c in companies_raw.replace("，", ",").split(",") if c.strip()]
+        cache_key = f"role_bundle:{role_id}:{','.join(sorted(companies))}"
+        cached = _get_cached_bundle(cache_key)
+        if cached is not None:
+            return 200, cached
         bundle = load_merged_role_bundle(
             banks_dir(),
             preset.search_as,
@@ -327,15 +361,23 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         )
         if bundle is None:
             return 404, {"error": "no_banks_for_role", "role_id": role_id}
+        _slim_bundle(bundle)
+        _set_cached_bundle(cache_key, bundle)
         return 200, bundle
 
     if method == "GET" and route.startswith("/api/banks/"):
         slug = unquote(route[len("/api/banks/") :].strip("/"))
         if not slug or "/" in slug:
             return 400, {"error": "invalid_slug"}
+        cache_key = f"bank:{slug}"
+        cached = _get_cached_bundle(cache_key)
+        if cached is not None:
+            return 200, cached
         bundle = load_bank_bundle(banks_dir(), slug)
         if bundle is None:
             return 404, {"error": "bank_not_found", "slug": slug}
+        _slim_bundle(bundle)
+        _set_cached_bundle(cache_key, bundle)
         return 200, bundle
 
     if method == "GET" and route == "/api/jobs/sources":
@@ -410,6 +452,175 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         config = _config_from_body(data)
         result = run_pipeline(config)
         return 200, result.to_dict()
+
+    if route == "/api/prep":
+        # Prep Agent 内化：服务端全自动执行步骤 4–8
+        if not body or not body.get("role"):
+            return 400, {"error": "role is required"}
+        from scripts.corpus.prep_agent import build_prep_package
+        from scripts.corpus.ai_gate import ai_enabled
+        data = dict(body or {})
+        role = str(data.get("role") or "数据开发")
+        companies = [str(c).strip() for c in (data.get("companies") or []) if str(c).strip()]
+        resume_text = str(data.get("resume_text") or "")
+        mode = "auto" if ai_enabled() else "heuristic"
+
+        # 加载最新题库
+        all_banks = list_banks(banks_dir())
+        role_banks = [b for b in all_banks if role in (b.get("role") or "")]
+        top_questions = []
+        if role_banks:
+            bundle = load_bank_bundle(banks_dir(), role_banks[0]["slug"]) or {}
+            ui = bundle.get("question_bank_ui") or {}
+            top_questions = (ui.get("questions") or [])[:40]
+
+        from scripts.models import Question
+        qs = [Question.from_dict(q) if isinstance(q, dict) else q for q in top_questions]
+
+        pkg = build_prep_package(
+            role=role,
+            companies=companies,
+            top_questions=qs,
+            resume_text=resume_text,
+            mode=mode,
+        )
+        return 200, pkg.to_dict()
+
+    if route == "/api/rag/build":
+        # 为指定 bank slug 构建 embedding 索引
+        slug = (body or {}).get("slug") or ""
+        if not slug:
+            return 400, {"error": "slug required"}
+        from scripts.corpus.rag import build_index, has_index
+        bundle = load_bank_bundle(banks_dir(), slug) or {}
+        ui = bundle.get("question_bank_ui") or {}
+        questions = (ui.get("questions") or [])[:2000]
+        if not questions:
+            return 404, {"error": "no questions found for slug"}
+        ok = build_index(banks_dir(), slug, questions)
+        if not ok:
+            return 500, {"error": "embedding failed — check DEEPSEEK_API_KEY"}
+        return 200, {"slug": slug, "indexed": len(questions)}
+
+    if route == "/api/rag/search":
+        data = dict(body or {})
+        slug = str(data.get("slug") or "")
+        query = str(data.get("query") or "").strip()
+        if not slug or not query:
+            return 400, {"error": "slug and query required"}
+        from scripts.corpus.rag import search, has_index
+        if not has_index(banks_dir(), slug):
+            return 404, {"error": "index_not_built", "hint": "call /api/rag/build first"}
+        results = search(
+            banks_dir(), slug, query,
+            top_k=int(data.get("top_k") or 10),
+            topic_filter=data.get("topic_filter") or None,
+        )
+        return 200, {"results": results, "query": query}
+
+    if route == "/api/jd-analysis":
+        data = dict(body or {})
+        jd_text = str(data.get("jd_text") or "").strip()
+        slug = str(data.get("slug") or "").strip()
+        if not jd_text:
+            return 400, {"error": "jd_text required"}
+        from scripts.corpus.ai_gate import ai_enabled
+        if not ai_enabled():
+            return 400, {"error": "DEEPSEEK_API_KEY not configured"}
+        # 加载题库
+        if slug:
+            bundle = load_bank_bundle(banks_dir(), slug) or {}
+        else:
+            all_banks = list_banks(banks_dir())
+            bundle = load_bank_bundle(banks_dir(), all_banks[0]["slug"]) if all_banks else {}
+        ui = bundle.get("question_bank_ui") or {}
+        questions = (ui.get("questions") or [])[:60]
+        from scripts.jobs.jd_analysis import analyze_jd_coverage
+        result = analyze_jd_coverage(jd_text, questions)
+        if result is None:
+            return 500, {"error": "AI analysis failed"}
+        return 200, result
+
+    # ── 考点趋势 ────────────────────────────────────────────────────────────
+    if route == "/api/trends":
+        data = dict(body or {})
+        slug = str(data.get("slug") or "").strip()
+        if not slug:
+            all_banks = list_banks(banks_dir())
+            slug = all_banks[0]["slug"] if all_banks else ""
+        if not slug:
+            return 404, {"error": "no bank found"}
+        bundle = load_bank_bundle(banks_dir(), slug) or {}
+        posts = bundle.get("posts") or []
+        from scripts.corpus.trends import compute_trends, ai_trend_broadcast
+        trend = compute_trends(posts)
+        # AI 叙述（可选，失败不阻断）
+        try:
+            from scripts.corpus.ai_gate import ai_enabled
+            if ai_enabled():
+                trend["broadcast"] = ai_trend_broadcast(trend)
+        except Exception:
+            trend["broadcast"] = ""
+        return 200, trend
+
+    # ── 模拟面试 ────────────────────────────────────────────────────────────
+    if route == "/api/mock/start":
+        data = dict(body or {})
+        role = str(data.get("role") or "数据开发")
+        background = str(data.get("background") or "").strip()
+        slug = str(data.get("slug") or "").strip()
+        if not slug:
+            all_banks = list_banks(banks_dir())
+            role_banks = [b for b in all_banks if role in (b.get("role") or "")]
+            slug = (role_banks or all_banks or [{}])[0].get("slug", "")
+        questions = []
+        if slug:
+            bundle = load_bank_bundle(banks_dir(), slug) or {}
+            ui = bundle.get("question_bank_ui") or {}
+            questions = (ui.get("questions") or [])[:80]
+        if not questions:
+            return 404, {"error": "no questions in bank"}
+        from scripts.corpus.mock_interview import start_session
+        sid, first_q = start_session(role, questions, background=background, max_questions=8)
+        if not sid:
+            return 500, {"error": "failed to start session"}
+        return 200, {"session_id": sid, "question": first_q, "total": min(8, len(questions)), "progress": f"1/{min(8,len(questions))}"}
+
+    if route == "/api/mock/reply":
+        data = dict(body or {})
+        sid = str(data.get("session_id") or "").strip()
+        answer = str(data.get("answer") or "").strip()
+        if not sid or not answer:
+            return 400, {"error": "session_id and answer required"}
+        from scripts.corpus.mock_interview import reply as mock_reply
+        result = mock_reply(sid, answer)
+        if result.get("error"):
+            return 404, result
+        return 200, result
+
+    # ── 题目详情 + AI 答案 ───────────────────────────────────────────────────
+    if route == "/api/question/answer":
+        data = dict(body or {})
+        question = str(data.get("question") or "").strip()
+        topic    = str(data.get("topic") or "")
+        role     = str(data.get("role") or "数据开发")
+        slug     = str(data.get("slug") or "").strip()
+        if not question:
+            return 400, {"error": "question required"}
+        from scripts.corpus.question_answer import get_answer
+        from scripts.corpus.ai_gate import ai_enabled
+        if not ai_enabled():
+            return 200, {"answer": "（需配置 DEEPSEEK_API_KEY 才能生成答案，请在 .env 文件中配置）", "key_points": [], "depth": "", "pitfalls": ""}
+        try:
+            result = get_answer(question, topic=topic, role=role, banks_dir=banks_dir(), slug=slug)
+        except RuntimeError as exc:
+            return 402, {"error": str(exc)}
+        except Exception as exc:
+            print(f"[server] question/answer error: {exc}")
+            return 500, {"error": f"生成失败：{exc}"}
+        if not result:
+            return 500, {"error": "AI 未返回有效答案，请检查 DEEPSEEK_API_KEY 或稍后重试"}
+        return 200, result
 
     if route == "/api/xhs/scrape-safe":
         from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
@@ -647,6 +858,7 @@ class InterviewRadarHandler(BaseHTTPRequestHandler):
         except FileNotFoundError as exc:
             _json_response(self, 404, {"error": "not_found", "message": str(exc)})
         except Exception as exc:  # noqa: BLE001
+            import traceback; traceback.print_exc()
             _json_response(self, 500, {"error": "internal_error", "message": str(exc)})
 
 

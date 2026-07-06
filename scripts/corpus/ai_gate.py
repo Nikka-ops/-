@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -68,20 +69,29 @@ def _cache_path(name: str) -> Path:
     return p
 
 
+_CACHE_MEM: dict[str, dict] = {}
+
+
 def load_cache(name: str) -> dict:
+    if name in _CACHE_MEM:
+        return _CACHE_MEM[name]
     path = _cache_path(name)
     if not path.is_file():
-        return {}
+        _CACHE_MEM[name] = {}
+        return _CACHE_MEM[name]
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        _CACHE_MEM[name] = {}
+        return _CACHE_MEM[name]
+    _CACHE_MEM[name] = data if isinstance(data, dict) else {}
+    return _CACHE_MEM[name]
 
 
 def save_cache(name: str, cache: dict) -> None:
     if cache:
         _cache_path(name).write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        _CACHE_MEM[name] = cache
 
 
 def clear_agent_caches() -> list[str]:
@@ -95,30 +105,8 @@ def clear_agent_caches() -> list[str]:
 
 
 def chat_json(system: str, user: str) -> dict | None:
-    url = f"{deepseek_api_base()}/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {deepseek_api_key()}", "Content-Type": "application/json"}
-    body = {
-        "model": deepseek_model(),
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "temperature": 0,
-        "response_format": {"type": "json_object"},
-    }
-    for trust_env in ((True, False) if deepseek_use_proxy() else (False, True)):
-        try:
-            with requests.Session() as session:
-                session.trust_env = trust_env
-                resp = session.post(url, headers=headers, json=body, timeout=25)
-                resp.raise_for_status()
-                raw = re.sub(
-                    r"^```(?:json)?\s*|\s*```$",
-                    "",
-                    str(resp.json()["choices"][0]["message"]["content"]).strip(),
-                )
-                data = json.loads(raw)
-                return data if isinstance(data, dict) else None
-        except (requests.RequestException, json.JSONDecodeError, KeyError, ValueError, TypeError):
-            continue
-    return None
+    from scripts.ai.gateway import chat_json as _gw_chat
+    return _gw_chat(system, user, task="filter")
 
 
 def _post_key(url: str, blob: str) -> str:
@@ -178,6 +166,11 @@ def cached_post_keep(url: str, blob: str) -> bool | None:
 def _merge_batch(batch: list[tuple[int, Question]]) -> list[Question]:
     data = chat_json(_CLUSTER_SYS, json.dumps([{"id": str(i), "text": q.text[:280]} for i, q in batch], ensure_ascii=False))
     if not data:
+        print(
+            f"[ai_gate] cluster batch of {len(batch)} questions returned no AI data; "
+            "passing through unmerged (check DEEPSEEK_API_KEY/network).",
+            file=sys.stderr,
+        )
         return [q for _, q in batch]
 
     drop = {int(x) for x in (data.get("drop") or []) if str(x).isdigit()}
@@ -214,19 +207,8 @@ def _merge_batch(batch: list[tuple[int, Question]]) -> list[Question]:
     return out
 
 
-def cluster_questions(
-    questions: list[Question],
-    *,
-    batch_size: int = 35,
-    offline_threshold: float = 0.68,
-    today: date | None = None,
-) -> list[Question]:
-    if len(questions) < 2:
-        return questions
-    if not ai_enabled():
-        merged = merge_similar_questions(questions, threshold=offline_threshold)
-        return dedupe_and_rank(merged, today=today) if today else merged
-
+def _cluster_pass(questions: list[Question], *, batch_size: int) -> tuple[list[Question], bool]:
+    """Returns (merged_questions, spanned_multiple_batches)."""
     indexed = list(enumerate(questions))
     if len(indexed) > batch_size * 2:
         indexed = list(enumerate(merge_similar_questions(questions, threshold=0.55)))
@@ -236,7 +218,35 @@ def cluster_questions(
         if start:
             time.sleep(0.15)
         merged.extend(_merge_batch(indexed[start : start + batch_size]))
-    return dedupe_and_rank(merged) if merged else merge_similar_questions(questions, threshold=offline_threshold)
+    result = dedupe_and_rank(merged) if merged else questions
+    return result, len(indexed) > batch_size
+
+
+def cluster_questions(
+    questions: list[Question],
+    *,
+    batch_size: int = 35,
+    offline_threshold: float = 0.68,
+    today: date | None = None,
+    max_passes: int = 3,
+) -> list[Question]:
+    if len(questions) < 2:
+        return questions
+    if not ai_enabled():
+        merged = merge_similar_questions(questions, threshold=offline_threshold)
+        return dedupe_and_rank(merged, today=today) if today else merged
+
+    # A single pass only compares questions within the same batch of `batch_size`,
+    # so duplicates landing in different batches survive. Re-run on the merged
+    # output — batch composition shifts each pass as the list shrinks, so a later
+    # pass can group questions that were split apart before — until a pass fits
+    # in one AI batch (nothing left to compare across) or max_passes is hit.
+    current = questions
+    for _ in range(max_passes):
+        current, spanned_multiple = _cluster_pass(current, batch_size=batch_size)
+        if not spanned_multiple:
+            break
+    return current
 
 
 def enrich_answers(questions: list[Question], role: str, *, top_n: int = 40, batch_size: int = 12) -> list[Question]:

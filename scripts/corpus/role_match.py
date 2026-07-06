@@ -1,195 +1,152 @@
-"""Map scraped posts to preset tech roles and filter bank ingest by target role."""
+"""Role inference + focus-role match. AI path in post_filter.py; this is the offline fallback."""
 from __future__ import annotations
 
 import re
 
-from scripts.corpus.tech_roles import TECH_ROLES, TechRole, get_tech_role
+from scripts.corpus.tech_roles import TECH_ROLES, TechRole, canonical_role_id, get_tech_role
 from scripts.models import RawPost
 
-_SPACE = re.compile(r"\s+")
-_ROLE_NOISE = re.compile(
-    r"(?:面经|面试|实习|校招|社招|秋招|春招|经验|分享|记录|汇总|整理|攻略|一面|二面|三面)+",
-    re.IGNORECASE,
+_FOCUS = frozenset({"data", "ai_app"})
+_HINTS = (
+    (re.compile(r"测开|测试开发|QA工程师", re.I), "qa"),
+    (re.compile(r"后端|后台开发|Java开发|Go开发|C\+\+开发|服务端开发", re.I), "backend"),
+    (re.compile(r"前端|React|Vue|H5开发", re.I), "frontend"),
+    (re.compile(r"嵌入式|MCU|单片机", re.I), "client"),
+    (re.compile(r"外贸|海关|拓客|跨境", re.I), "product"),
+    (re.compile(r"数据分析|BI分析|商业分析", re.I), "data_analyst"),
+    (re.compile(r"Agent|RAG|MCP|LangChain|智能体", re.I), "ai_app"),
+    (re.compile(r"数据开发|数仓|数开|ETL|数据研发|Hive|Flink|湖仓|数仓工程师|大数据开发", re.I), "data"),
+    (re.compile(r"大模型|LLM|SFT", re.I), "llm"),
+    (re.compile(r"算法|机器学习", re.I), "algorithm"),
 )
-
-# Ordered: more specific markers win over broad ones (e.g. 测开 before 大模型).
-_ROLE_HINT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
-    [
-        (re.compile(r"测开|测试开发|自动化测试|QA工程师?", re.I), "qa"),
-        (re.compile(r"客户端|Android|iOS|Flutter", re.I), "client"),
-        (re.compile(r"前端|React|Vue", re.I), "frontend"),
-        (re.compile(r"基础架构|SRE|运维开发", re.I), "infra"),
-        (re.compile(r"安全工程师|渗透|网络安全", re.I), "security"),
-        (re.compile(r"数据开发|数仓|ETL|Spark|Hive", re.I), "data"),
-        (re.compile(r"数据分析|BI分析师", re.I), "data_analyst"),
-        (re.compile(r"Agent开发|Agent\s*工程师|工具调用", re.I), "ai_app"),
-        (re.compile(r"AI应用|RAG|LangChain", re.I), "ai_app"),
-        (re.compile(r"大模型|LLM|预训练|SFT|RLHF", re.I), "llm"),
-        (re.compile(r"算法工程师|机器学习|深度学习|CV|NLP", re.I), "algorithm"),
-        (re.compile(r"后端|Java开发|Go开发|微服务", re.I), "backend"),
-        (re.compile(r"测试工程师", re.I), "qa"),
-    ]
-)
+_WRONG = {
+    "data": {"data_analyst", "ai_app", "llm", "backend", "frontend", "algorithm", "qa", "client", "product"},
+    "ai_app": {"backend", "frontend", "algorithm", "qa", "client", "data", "data_analyst", "product"},
+}
 
 
-def _norm(text: str) -> str:
-    return _SPACE.sub("", (text or "").strip().lower())
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", "", (s or "").strip().lower())
 
 
-def _aliases(preset: TechRole) -> set[str]:
-    items = {_norm(preset.search_as), _norm(preset.label)}
-    for kw in preset.keywords:
-        items.add(_norm(kw))
-    return {a for a in items if len(a) >= 2}
+def _aliases(p: TechRole) -> set[str]:
+    return {_norm(p.search_as), _norm(p.label)} | {_norm(k) for k in p.keywords if len(k) >= 2}
 
 
-def resolve_target_preset(target_role: str) -> TechRole | None:
-    target_norm = _norm(target_role)
-    if not target_norm:
-        return None
-    for preset in TECH_ROLES:
-        if target_norm in _aliases(preset) or any(
-            target_norm in a or a in target_norm for a in _aliases(preset)
-        ):
-            return preset
+def resolve_target_preset(role: str) -> TechRole | None:
+    n = _norm(role)
+    for p in TECH_ROLES:
+        if n in _aliases(p) or any(n in a or a in n for a in _aliases(p)):
+            return p
     return None
 
 
 def infer_preset_from_text(text: str) -> TechRole | None:
-    blob = (text or "").strip()
-    if not blob:
+    t = (text or "").strip()
+    if not t:
         return None
-    for pattern, role_id in _ROLE_HINT_PATTERNS:
-        if pattern.search(blob):
-            return get_tech_role(role_id)
-    norm = _norm(blob)
-    best: TechRole | None = None
-    best_len = 0
-    for preset in TECH_ROLES:
-        for alias in _aliases(preset):
-            if alias and alias in norm and len(alias) > best_len:
-                best_len = len(alias)
-                best = preset
-    return best if best_len >= 3 else None
-
-
-def refine_extracted_role(
-    *,
-    title: str = "",
-    tags: list[str] | None = None,
-    desc: str = "",
-    parsed_role: str | None = None,
-) -> str | None:
-    """Pick a cleaner role label using preset taxonomy."""
-    parts = [title, parsed_role or "", desc]
-    if tags:
-        parts.extend(tags)
-    combined = "\n".join(p for p in parts if p and str(p).strip())
-    inferred = infer_preset_from_text(combined)
-    if inferred:
-        return inferred.search_as
-    if parsed_role and str(parsed_role).strip():
-        cleaned = _ROLE_NOISE.sub("", str(parsed_role)).strip()
-        return cleaned or None
-    return None
+    for pat, rid in _HINTS:
+        if pat.search(t):
+            preset = get_tech_role(rid)
+            if preset:
+                return preset
+    n = _norm(t)
+    best, nlen = None, 0
+    for p in TECH_ROLES:
+        for a in _aliases(p):
+            if len(a) >= 3 and a in n and len(a) > nlen:
+                best, nlen = p, len(a)
+    return best
 
 
 def post_text_blob(post: RawPost) -> str:
-    parts = [
-        post.raw_text or "",
-        post.content_text or "",
-        post.locator_text or "",
-        post.image_ocr_text or "",
-        post.role or "",
-    ]
-    return "\n".join(p for p in parts if p and str(p).strip())
+    return "\n".join(x for x in (post.raw_text, post.content_text, post.locator_text, post.image_ocr_text, post.role) if x)
+
+
+def post_combined_text(post: RawPost) -> str:
+    return post_text_blob(post).strip()
+
+
+def _body_text(post: RawPost, limit: int = 600) -> str:
+    return "\n".join(x for x in (post.raw_text, post.content_text, post.locator_text, post.image_ocr_text) if x)[:limit]
+
+
+def _head(post: RawPost) -> str:
+    raw = (post.raw_text or post.content_text or post.role or "").strip()
+    return raw.splitlines()[0][:160] if raw else ""
 
 
 def infer_preset_from_post(post: RawPost) -> TechRole | None:
-    """Prefer scraped role label, then title line, then full body."""
-    if (post.role or "").strip():
-        hit = infer_preset_from_text(post.role)
-        if hit:
-            return hit
-    raw = (post.raw_text or post.content_text or "").strip()
-    if raw:
-        first = raw.splitlines()[0].strip()[:160]
-        hit = infer_preset_from_text(first)
-        if hit:
-            return hit
-    return infer_preset_from_text(post_text_blob(post))
+    """Title / explicit role only — do not scan full body (avoids Spark/agent bleed)."""
+    if post.role and (h := infer_preset_from_text(str(post.role))):
+        return h
+    return infer_preset_from_text(_head(post))
 
 
-def score_post_for_bank(post: RawPost, target_role: str) -> tuple[float, bool]:
-    """Return (score 0–1, role_mismatch). mismatch=True when confident wrong role."""
-    target = resolve_target_preset(target_role)
-    if not target:
-        return 1.0, False
-
-    inferred = infer_preset_from_post(post)
-    if inferred is None:
-        target_aliases = _aliases(target)
-        norm_blob = _norm(post_text_blob(post))
-        if any(a in norm_blob for a in target_aliases):
-            return 0.7, False
-        return 0.55, False
-
-    if inferred.id == target.id:
-        return 1.0, False
-
-    related_groups = [
-        {"ai_app", "agent", "llm"},
-        {"algorithm", "llm"},
-        {"data", "data_analyst"},
-    ]
-    for group in related_groups:
-        if inferred.id in group and target.id in group:
-            return 0.45, False
-
-    return 0.15, True
+def refine_extracted_role(*, title: str = "", tags: list[str] | None = None, desc: str = "", parsed_role: str | None = None) -> str | None:
+    if title and (h := infer_preset_from_text(title)):
+        return h.search_as
+    extra = "\n".join(x for x in ((tags or []) + [parsed_role or ""]) if x)
+    if extra and (h := infer_preset_from_text(extra)):
+        return h.search_as
+    return (parsed_role or "").strip() or None
 
 
-def filter_posts_for_bank(
-    posts: list[RawPost],
-    target_role: str,
-    *,
-    min_score: float = 0.2,
-) -> tuple[list[RawPost], list[RawPost]]:
-    kept: list[RawPost] = []
-    dropped: list[RawPost] = []
-    for post in posts:
-        score, mismatch = score_post_for_bank(post, target_role)
-        if mismatch and score < min_score:
-            dropped.append(post)
-        else:
-            kept.append(post)
-    return kept, dropped
+def matches_target_role(post: RawPost, target_role: str) -> bool:
+    """Offline fallback. Primary filtering is done by DeepSeek in post_filter.py."""
+    tgt = resolve_target_preset(target_role)
+    if not tgt:
+        return True
+    tid = canonical_role_id(tgt.id)
+
+    # Check title for obvious wrong role
+    head = _head(post)
+    th = infer_preset_from_text(head)
+    if th and tid in _FOCUS and th.id in _WRONG.get(tid, set()):
+        return False
+    if th and th.id == tgt.id:
+        return True
+
+    # Check explicit role field
+    if post.role:
+        pr = infer_preset_from_text(str(post.role))
+        if pr and tid in _FOCUS and pr.id in _WRONG.get(tid, set()):
+            return False
+        if pr and canonical_role_id(pr.id) == tid:
+            return True
+
+    # Body keyword scan for focus roles
+    if tid in _FOCUS:
+        body = _body_text(post)
+        # Data role keywords
+        if tid == "data" and re.search(r"数据开发|数仓|数开|ETL|Spark|Hive|Flink|大数据|数据研发", body, re.I):
+            return True
+        # AI app role keywords
+        if tid == "ai_app" and re.search(r"Agent|RAG|MCP|LangChain|智能体", body, re.I):
+            return True
+
+    # Default: trust scrape query pre-filtering
+    inf = infer_preset_from_post(post)
+    if inf and tid in _FOCUS and inf.id in _WRONG.get(tid, set()):
+        return False
+    return True
 
 
-def annotate_post_role(post: RawPost) -> RawPost:
-    """Fill missing role from text; do not overwrite labels already set at scrape."""
-    if (post.role or "").strip():
-        return post
-    refined = refine_extracted_role(
-        title=(post.raw_text or "")[:120],
-        desc=post_text_blob(post),
-        parsed_role=post.role,
-    )
-    if refined:
-        post.role = refined
-    return post
-
-
-def annotate_post_company(post: RawPost) -> RawPost:
-    if (post.company or "").strip():
-        return post
-    from scripts.corpus.classify import infer_company_from_text
-
-    company = infer_company_from_text(post_text_blob(post))
-    if company:
-        post.company = company
-    return post
+def filter_posts_for_bank(posts: list[RawPost], target_role: str, **_) -> tuple[list[RawPost], list[RawPost]]:
+    kept = [p for p in posts if matches_target_role(p, target_role)]
+    return kept, [p for p in posts if p not in kept]
 
 
 def annotate_post(post: RawPost) -> RawPost:
-    return annotate_post_company(annotate_post_role(post))
+    from scripts.corpus.classify import infer_company_from_text
+    from scripts.corpus.company_normalize import normalize_company_name
+
+    head = _head(post)
+    if r := refine_extracted_role(title=head, parsed_role=post.role):
+        post.role = r
+    if not (post.company or "").strip():
+        if c := infer_company_from_text(post_text_blob(post)):
+            post.company = normalize_company_name(c) or ""
+    elif post.company:
+        post.company = normalize_company_name(post.company) or ""
+    return post

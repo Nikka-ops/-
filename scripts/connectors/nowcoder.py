@@ -52,10 +52,26 @@ def _parse_create_time(html: str) -> str | None:
 def _extract_body(soup: BeautifulSoup) -> str:
     for selector in ("div.nc-post-content", "div.nc-slate-editor-content"):
         el = soup.select_one(selector)
-        if el:
-            text = el.get_text("\n", strip=True)
-            if text:
-                return text
+        if not el:
+            continue
+        blocks: list[str] = []
+        for node in el.find_all(["h1", "h2", "h3", "h4", "p", "li", "blockquote", "pre", "div"]):
+            # skip nested duplicates: only direct meaningful blocks
+            if node.name == "div" and node.find(["p", "li", "h2", "h3"]):
+                continue
+            text = node.get_text("\n", strip=True)
+            if text and len(text) >= 2:
+                blocks.append(text)
+        if blocks:
+            # dedupe consecutive identical lines
+            out: list[str] = []
+            for b in blocks:
+                if not out or out[-1] != b:
+                    out.append(b)
+            return "\n\n".join(out)
+        text = el.get_text("\n", strip=True)
+        if text:
+            return text
     return ""
 
 

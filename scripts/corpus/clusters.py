@@ -30,6 +30,7 @@ def build_clusters(ranked: list[Question], *, ref_score_fn) -> list[dict]:
                 "variant_count": len(q.variants),
                 "variants": q.variants,
                 "source_refs": q.source_refs,
+                "answer": q.answer or "",
             }
         )
     return clusters

@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 REQUESTED_PORT="${1:-8765}"
 
-if [[ ! -x .venv/bin/interview-radar-web ]]; then
+if [[ ! -x .venv/bin/python ]]; then
   echo "First run — installing …"
   bash "$ROOT/install.sh"
 fi
@@ -39,4 +39,4 @@ fi
 
 echo "InterviewRadar Web UI: http://127.0.0.1:${PORT}/"
 echo "Press Ctrl+C to stop."
-exec .venv/bin/interview-radar-web --port "$PORT"
+exec .venv/bin/python -m scripts.api.server --port "$PORT"

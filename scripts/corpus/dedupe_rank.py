@@ -80,9 +80,17 @@ def dedupe_and_rank(questions: list[Question], today: date | None = None) -> lis
             _union(m.role_tags, q.role_tags)
             _union(m.company_tags, q.company_tags)
 
+    def _modality_weight(modality: str) -> float:
+        """Penalize low-confidence OCR sources so they rank below text-sourced questions."""
+        if modality == "vision":   # flagged needs_vision_fallback — lowest confidence
+            return 0.4
+        if modality == "ocr":      # RapidOCR succeeded but may have errors
+            return 0.8
+        return 1.0                 # text — full weight
+
     def score(k: str) -> float:
         q = merged[k]
-        return q.freq * _recency_weight(q.latest_posted_at, ref)
+        return q.freq * _recency_weight(q.latest_posted_at, ref) * _modality_weight(q.modality_origin)
 
     ranked = sorted(order, key=lambda k: -score(k))
     return [merged[k] for k in ranked]

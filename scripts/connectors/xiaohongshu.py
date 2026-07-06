@@ -1,13 +1,14 @@
 import json
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from scripts.connectors.base import Connector, SearchResult
 from scripts.corpus.classify import extract_company_role
+from scripts.config import full_scrape_recency_days
 from scripts.models import RawPost
 from scripts.ocr.xhs_images import build_locator_text, process_xhs_note_images
-from scripts.scrape.mediacrawler_driver import MediaCrawlerDriver
+from scripts.scrape.spider_xhs_driver import SpiderXHSDriver
 from scripts.scrape.normalize_xhs import normalize
 
 
@@ -21,9 +22,24 @@ def _epoch_ms_to_iso(ms) -> str | None:
     return dt.date().isoformat()
 
 
-def _posts_from_notes(notes: list[dict]) -> list[RawPost]:
+def _within_recency(iso: str | None, window_days: int) -> bool:
+    if not iso:
+        return True
+    try:
+        posted = date.fromisoformat(iso[:10])
+        return (date.today() - posted).days <= window_days
+    except ValueError:
+        return True
+
+
+def _posts_from_notes(notes: list[dict], *, window_days: int | None = None) -> list[RawPost]:
+    """Build RawPosts from normalized notes. ``window_days=None`` skips date filter (pipeline applies recency later)."""
+    window = full_scrape_recency_days() if window_days is None else window_days
     posts: list[RawPost] = []
     for note in notes:
+        posted_at = _epoch_ms_to_iso(note.get("time"))
+        if window > 0 and not _within_recency(posted_at, window):
+            continue
         title = (note.get("title") or "").strip()
         desc = (note.get("desc") or "").strip()
         tags = _coerce_tags(note.get("tags") or note.get("tag_list"))
@@ -45,6 +61,11 @@ def _posts_from_notes(notes: list[dict]) -> list[RawPost]:
             )
         )
     return posts
+
+
+def posts_from_notes(notes: list[dict], *, window_days: int | None = None) -> list[RawPost]:
+    """Public wrapper for export / ingest metrics."""
+    return _posts_from_notes(notes, window_days=window_days)
 
 
 def parse_mediacrawler_export(json_text: str) -> list[RawPost]:
@@ -87,7 +108,7 @@ class XiaohongshuConnector(Connector):
     def __init__(
         self,
         export_path: str | None = None,
-        driver: MediaCrawlerDriver | None = None,
+        driver: SpiderXHSDriver | None = None,
         loader: Callable[[str], str] | None = None,
         login_type: str = "qrcode",
         asset_root="corpus_cache/assets/xhs",
@@ -99,7 +120,7 @@ class XiaohongshuConnector(Connector):
         if export_path is None and driver is None:
             raise ValueError(
                 "XiaohongshuConnector requires either export_path (pre-scraped JSON) "
-                "or driver (MediaCrawlerDriver for on-demand scraping)"
+                "or driver (SpiderXHSDriver for on-demand scraping)"
             )
         self.export_path = export_path
         self.driver = driver
@@ -141,9 +162,9 @@ class XiaohongshuConnector(Connector):
                 if not queries:
                     return SearchResult.degraded(
                         self.name,
-                        "需要关键词才能用 MediaCrawler 驱动模式;请传入 queries",
+                        "需要关键词才能用 Spider_XHS 驱动模式;请传入 queries",
                     )
-                notes_path = self.driver.scrape_xhs(queries, login_type=self.login_type)
+                notes_path = self.driver.scrape_xhs(queries)
                 native = json.loads(Path(notes_path).read_text(encoding="utf-8"))
                 posts = self._posts_with_images(normalize(native))
             else:
@@ -152,8 +173,7 @@ class XiaohongshuConnector(Connector):
         except Exception as exc:  # noqa: BLE001 - degrade, never crash the pipeline
             return SearchResult.degraded(
                 self.name,
-                f"无法获取小红书数据 ({exc});若用 driver 模式请检查 MediaCrawler 登录态是否过期"
-                "(qrcode 模式重扫码,cookie 模式重新拿 web_session 填进 config.COOKIES),"
-                "或确认 MediaCrawler 是否安装在 $MEDIACRAWLER_HOME / ~/.mediacrawler/",
+                f"无法获取小红书数据 ({exc});若用 driver 模式请检查 CDP Chrome 是否已登录，"
+                "或设置 XHS_COOKIES；确认 Spider_XHS 已安装在 $SPIDER_XHS_HOME / ~/.spider_xhs",
             )
         return SearchResult(posts=posts, status="ok", message=f"{len(posts)} posts")

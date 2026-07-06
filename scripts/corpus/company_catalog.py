@@ -1,7 +1,7 @@
-"""Preset company groups for Web UI filters (互联网 / 制造业 / 其他)."""
+"""Preset company groups for Web UI filters (互联网大厂 + 其他)."""
 from __future__ import annotations
 
-# 互联网大厂
+# 互联网 / 中大厂（默认抓取 / UI 主栏）
 INTERNET_GIANTS: tuple[str, ...] = (
     "字节跳动",
     "腾讯",
@@ -23,9 +23,13 @@ INTERNET_GIANTS: tuple[str, ...] = (
     "MiniMax",
     "微软",
     "谷歌",
+    "OPPO",
+    "vivo",
+    "Shein",
+    "Shopee",
 )
 
-# 制造业 / 新能源 / 硬科技大厂
+# 制造业等：不在 UI 单独分栏；面经出现则计入「其他」
 MANUFACTURING_GIANTS: tuple[str, ...] = (
     "比亚迪",
     "蔚来",
@@ -37,25 +41,28 @@ MANUFACTURING_GIANTS: tuple[str, ...] = (
     "格力",
     "海尔",
     "三一重工",
-    "OPPO",
-    "vivo",
     "顺丰",
 )
 
 COMPANY_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("internet", "互联网大厂", INTERNET_GIANTS),
-    ("manufacturing", "制造业大厂", MANUFACTURING_GIANTS),
 )
 
-_ALL_PRESET: frozenset[str] = frozenset(INTERNET_GIANTS) | frozenset(MANUFACTURING_GIANTS)
+_ALL_PRESET: frozenset[str] = frozenset(INTERNET_GIANTS)
+
+OTHER_COMPANY_LABEL = "其他"
 
 
 def all_preset_companies() -> list[str]:
     return sorted(_ALL_PRESET)
 
 
+def is_preset_company(name: str) -> bool:
+    return (name or "").strip() in _ALL_PRESET
+
+
 def resolve_company_list(raw: str | list[str] | None) -> list[str]:
-    """Parse CLI/UI company args; ``all`` / ``全国大厂`` → full preset list."""
+    """Parse CLI/UI company args; ``all`` / ``全国大厂`` → internet preset list."""
     if raw is None:
         return []
     if isinstance(raw, str):
@@ -80,7 +87,3 @@ def list_company_groups() -> list[dict]:
         {"id": gid, "label": label, "companies": list(companies)}
         for gid, label, companies in COMPANY_GROUPS
     ]
-
-
-def is_preset_company(name: str) -> bool:
-    return (name or "").strip() in _ALL_PRESET

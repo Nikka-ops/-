@@ -73,14 +73,86 @@ def cdp_port_open(port: int) -> bool:
         return False
 
 
+def cdp_extract_cookies_string(
+    port: int,
+    *,
+    domains: tuple[str, ...] = ("xiaohongshu.com", "rednote.com"),
+) -> str:
+    """Read live cookie header string from CDP Chrome (XHS login window)."""
+    if not cdp_port_open(port):
+        return ""
+    page_ws: str | None = None
+    for target in cdp_list_targets(port):
+        if target.get("type") != "page":
+            continue
+        url = str(target.get("url") or "")
+        if not any(d in url for d in domains):
+            continue
+        ws = target.get("webSocketDebuggerUrl")
+        if ws:
+            page_ws = str(ws)
+            break
+    if not page_ws:
+        return ""
+
+    session = CdpSession(page_ws, timeout=15.0)
+    try:
+        session.call("Network.enable")
+        seen: dict[str, str] = {}
+        for url in (
+            "https://www.xiaohongshu.com",
+            "https://www.xiaohongshu.com/explore",
+            "https://www.rednote.com",
+        ):
+            result = session.call("Network.getCookies", {"urls": [url]})
+            cookies = result.get("cookies") if isinstance(result, dict) else []
+            if not isinstance(cookies, list):
+                continue
+            for cookie in cookies:
+                if not isinstance(cookie, dict):
+                    continue
+                name = str(cookie.get("name") or "").strip()
+                value = str(cookie.get("value") or "").strip()
+                domain = str(cookie.get("domain") or "")
+                if not name or not value:
+                    continue
+                if any(d in domain for d in domains):
+                    seen[name] = value
+        return "; ".join(f"{k}={v}" for k, v in seen.items())
+    except (CdpError, OSError, ValueError, json.JSONDecodeError):
+        return ""
+    finally:
+        session.close()
+
+
+def cdp_extract_web_session(port: int, *, domains: tuple[str, ...] = ("xiaohongshu.com", "rednote.com")) -> str:
+    """Read live ``web_session`` from an existing CDP Chrome (XHS login window)."""
+    for part in cdp_extract_cookies_string(port, domains=domains).split(";"):
+        piece = part.strip()
+        if piece.startswith("web_session="):
+            return piece.split("=", 1)[1].strip()
+    return ""
+
+
 def find_zhipin_page_ws(port: int) -> str | None:
+    pages: list[dict[str, Any]] = []
     for target in cdp_list_targets(port):
         if target.get("type") != "page":
             continue
         url = str(target.get("url") or "")
         if "zhipin.com" in url and target.get("webSocketDebuggerUrl"):
-            return str(target["webSocketDebuggerUrl"])
-    return None
+            pages.append(target)
+    if not pages:
+        return None
+
+    def _score(target: dict[str, Any]) -> tuple[int, int]:
+        url = str(target.get("url") or "")
+        job_page = 1 if ("/job" in url or "/jobs" in url) else 0
+        geek = 1 if "/geek/" in url else 0
+        return (job_page + geek, len(url))
+
+    best = max(pages, key=_score)
+    return str(best["webSocketDebuggerUrl"])
 
 
 def open_zhipin_page(port: int, *, wait_sec: float = 2.0) -> str:

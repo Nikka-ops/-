@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "interview-radar",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "scripts.api.server", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}

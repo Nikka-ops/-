@@ -61,6 +61,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--keywords", nargs="*", default=[])
     parser.add_argument("--top-n", type=int, default=30)
     parser.add_argument("--rebuild-only", action="store_true")
+    parser.add_argument(
+        "--clear-ai-cache",
+        action="store_true",
+        help="重建前清空 Agent 面经/解答缓存",
+    )
     parser.add_argument("--no-semantic-merge", action="store_true")
     parser.add_argument("--merge-threshold", type=float, default=0.72)
     parser.add_argument("--filter-company-questions", action="store_true")
@@ -79,6 +84,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--json", action="store_true", help="Print RunResult JSON to stdout")
     args = parser.parse_args(argv)
+
+    if args.clear_ai_cache:
+        from scripts.corpus.ai_gate import clear_agent_caches
+
+        clear_agent_caches()
 
     result = run_pipeline(_config_from_args(args))
 

@@ -19,3 +19,8 @@ corpus_cache/
 .vscode/
 __pycache__/
 *.py[cod]
+
+server.log
+server_err.log
+debug_*.json
+*.egg-info/

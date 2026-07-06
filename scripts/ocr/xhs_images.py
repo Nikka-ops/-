@@ -46,7 +46,18 @@ def build_locator_text(title: str, desc: str, tags: list[str] | None = None) -> 
     return _join_text([title, desc, tag_text])
 
 
+_ENGINE_CACHE: list = []  # singleton — loading the ONNX models takes seconds
+
+
 def rapidocr_engine() -> OcrEngine | None:
+    if _ENGINE_CACHE:
+        return _ENGINE_CACHE[0]
+    engine = _build_rapidocr_engine()
+    _ENGINE_CACHE.append(engine)
+    return engine
+
+
+def _build_rapidocr_engine() -> OcrEngine | None:
     try:
         from rapidocr import RapidOCR
     except Exception:
