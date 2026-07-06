@@ -68,15 +68,16 @@ def diagnose(role_id: str, companies_raw: str) -> dict:
         "after_recency_full": len(recent_full),
         "skip_role_filter_full_recency": len(recent_skip),
         "bottlenecks": [
-            "daily_scrape 每天只跑 24 个牛客词（全量需 full_scrape：185 词）",
-            f"默认 UI 近 {RECENCY_WINDOW_DAYS} 天过滤（全量用 {full_recency} 天）",
-            "严格岗位过滤会再少约 25–30%（full_scrape 默认 skip_role_filter）",
-            "小红书未配 Cookie 时仅 ~22 条本地 JSON（面经主源缺失）",
+            "面经主源为小红书 — 近 3 个月（90 天）时效",
+            "daily_scrape 默认 24 词/天、批间 30s（可调 XHS_DAILY_KEYWORDS_PER_DAY / XHS_BATCH_PAUSE_SECONDS）",
+            "牛客为补充源（默认 16 词/天）；图片帖走 OCR 合并正文",
+            f"默认 UI 近 {RECENCY_WINDOW_DAYS} 天过滤",
+            "严格岗位过滤默认开启（full_scrape 加 --skip-role-filter 可关闭）",
         ],
         "recommended_full_scrape": (
             "uv run python -m scripts.tools.full_scrape --role-id "
-            f"{role_id} --companies all --skip-xhs"
-            + ("" if xhs_web_session_configured() else "  # 配 XHS_WEB_SESSION 后去掉 --skip-xhs")
+            f"{role_id} --companies all"
+            + ("" if xhs_web_session_configured() else "  # 先在 .env 配置 XHS_WEB_SESSION")
         ),
     }
 

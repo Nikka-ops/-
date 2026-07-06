@@ -69,6 +69,7 @@ def build_question_bank(
                 "variants": q.variants,
                 "variant_count": len(q.variants),
                 "source_refs": q.source_refs,
+                "answer": q.answer or "",
             }
         )
 
@@ -131,6 +132,11 @@ def render_frequency_report(bank: dict, top_n: int = 30) -> str:
         )
         if variants:
             lines.append(f"- 同类表述: {'；'.join(variants[:3])}")
+        if row.get("answer"):
+            ans = str(row["answer"]).replace("\n", " ")
+            if len(ans) > 120:
+                ans = ans[:120] + "…"
+            lines.append(f"- 参考解答: {ans}")
         if row.get("latest_posted_at"):
             lines.append(f"- 最近出现: {row['latest_posted_at']}")
         refs = row.get("source_refs") or []

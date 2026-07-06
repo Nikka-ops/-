@@ -6,7 +6,11 @@ cd "$ROOT"
 
 if [[ ! -d .venv ]]; then
   echo "Creating .venv …"
-  python3 -m venv .venv
+  if command -v python3.11 >/dev/null 2>&1; then
+    python3.11 -m venv .venv
+  else
+    python3 -m venv .venv
+  fi
 fi
 
 .venv/bin/pip install -U pip -q

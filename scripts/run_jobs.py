@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 
-from scripts.config import jobs_dir
-from scripts.jobs.service import JobFetchConfig, fetch_jobs, list_job_snapshots
+from scripts.config import focus_role_ids, job_recency_days, jobs_dir
+from scripts.corpus.tech_roles import parse_role_ids
+from scripts.jobs.service import JobFetchConfig, fetch_jobs_multi, list_job_snapshots
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -14,7 +15,12 @@ def main(argv: list[str] | None = None) -> int:
         description="InterviewRadar — 拉取 Boss直聘 / 大厂官网在招岗位 JD",
     )
     parser.add_argument("--role", default="", help="目标岗位文本")
-    parser.add_argument("--role-id", default="", help="预设岗位 id，如 ai_app、backend")
+    parser.add_argument("--role-id", default="", help="预设岗位 id，如 data、ai_app")
+    parser.add_argument(
+        "--role-ids",
+        default="",
+        help="逗号分隔多岗位；默认 data,ai_app",
+    )
     parser.add_argument("--companies", nargs="*", default=[], help="目标公司，如 字节跳动 腾讯")
     parser.add_argument("--cities", nargs="*", default=[], help="城市，如 北京 上海")
     parser.add_argument(
@@ -64,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"snapshots": rows}, ensure_ascii=False, indent=2))
         else:
             if not rows:
-                print("暂无 JD 缓存。运行 interview-radar-jobs --role-id ai_app 拉取。")
+                print("暂无 JD 缓存。运行 interview-radar-jobs 拉取。")
             for row in rows:
                 print(
                     f"{row.get('slug')}  jobs={row.get('job_count')}  "
@@ -72,9 +78,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
         return 0
 
+    role_ids = parse_role_ids(args.role_id, args.role_ids)
     config = JobFetchConfig(
         role=args.role,
-        role_id=args.role_id,
+        role_id=role_ids[0] if len(role_ids) == 1 else "",
         companies=args.companies,
         cities=args.cities,
         sources=args.sources,
@@ -86,8 +93,9 @@ def main(argv: list[str] | None = None) -> int:
         job_pro_details=not args.no_job_pro_details,
         boss_cdp=args.boss_cdp,
         cache_dir=root,
+        job_recency_days=job_recency_days(),
     )
-    result = fetch_jobs(config, root)
+    result = fetch_jobs_multi(config, role_ids or focus_role_ids(), root)
 
     if args.json:
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))

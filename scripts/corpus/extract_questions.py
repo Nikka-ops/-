@@ -42,16 +42,25 @@ _NOISE = re.compile(
     r")",
     re.IGNORECASE,
 )
-
+# Rules are applied in ORDER — put specific tech keywords FIRST, broad patterns LAST.
 _TOPIC_RULES: list[tuple[str, re.Pattern[str]]] = [
-    ("RAG", re.compile(r"rag|检索|召回|embedding|向量|rerank|切块|chunk", re.I)),
-    ("Agent", re.compile(r"agent|react|plan.?execute|多智能体|工具调用|function.?call", re.I)),
-    ("MCP/协议", re.compile(r"mcp|function.?calling|structured.?output|json.?mode", re.I)),
-    ("LLM基础", re.compile(r"transformer|attention|qkv|rope|微调|sft|lora|rlhf|ppo|dpo", re.I)),
-    ("手撕代码", re.compile(r"手撕|leetcode|力扣|coding|代码题|算法题", re.I)),
-    ("项目深挖", re.compile(r"项目|实习|架构|系统设计|压测|qps|部署", re.I)),
-    ("后端八股", re.compile(r"redis|mysql|kafka|tcp|线程|进程|锁|sql|jvm|spring", re.I)),
-    ("产品/业务", re.compile(r"产品|业务|指标|实验|ab|用户|场景", re.I)),
+    # AI-specific (most distinctive, check first)
+    ("RAG", re.compile(r"rag|检索增强|召回率|embedding|向量(?:数据库|检索)|rerank|切块|chunk", re.I)),
+    ("Agent", re.compile(r"\bagent\b|react\s*框架|plan.?execute|多智能体|工具调用|function.?call|tool\s*use", re.I)),
+    ("MCP/协议", re.compile(r"\bmcp\b|function.?calling|structured.?output|json.?mode", re.I)),
+    ("LLM基础", re.compile(r"transformer|attention机制|qkv|rope|位置编码|微调|sft|lora|rlhf|ppo|dpo|kv.?cache", re.I)),
+    # Data engineering (tech-specific, check before broad patterns)
+    ("Spark/计算", re.compile(r"\bspark\b|shuffle|宽依赖|窄依赖|\brdd\b|dataframe.*spark|spark.*dataframe|stage.*dag|spark.*内存", re.I)),
+    ("Flink/实时", re.compile(r"\bflink\b|checkpoint|watermark|双流.*join|实时.*计算|流批.*一体|状态.*后端", re.I)),
+    ("Hive/SQL", re.compile(r"\bhive\b|hql|分区.*分桶|mapreduce|\bmr\b|sql.*优化|执行计划|索引.*查询|窗口函数", re.I)),
+    ("数仓建模", re.compile(r"\bods\b|\bdwd\b|\bdws\b|\bads\b|维度.*事实|数据分层|星型.*模型|雪花.*模型|宽表|拉链表", re.I)),
+    ("数据工程", re.compile(r"\betl\b|任务调度|airflow|dolphin.*scheduler|数据质量|数据血缘|湖仓|iceberg|hudi|delta.*lake", re.I)),
+    # Coding
+    ("手撕代码", re.compile(r"手撕|leetcode|力扣|coding\s*题|算法题|写.*代码|实现.*算法", re.I)),
+    # Broader patterns — must come after specific ones
+    ("后端八股", re.compile(r"redis|mysql|kafka|tcp/ip|线程.*进程|synchronized|jvm|spring(?:boot)?|分布式.*锁", re.I)),
+    ("项目深挖", re.compile(r"项目.*难点|项目.*挑战|项目.*优化|系统设计|压测|qps.*tps|部署.*方案|架构.*演进", re.I)),
+    ("产品/业务", re.compile(r"业务.*指标|ab.*实验|用户.*增长|漏斗|埋点|gmv|dau|留存", re.I)),
 ]
 
 
@@ -135,9 +144,14 @@ def _lines_from_post(post: RawPost) -> list[str]:
 
 def extract_questions_from_post(post: RawPost) -> list[Question]:
     """Return one Question per extracted line (freq=1; caller merges via dedupe_and_rank)."""
-    company_tags = [post.company] if post.company else []
+    from scripts.corpus.company_normalize import normalize_company_name
+
+    company = normalize_company_name(post.company) if post.company else None
+    company_tags = [company] if company else []
     role_tags = [post.role] if post.role else []
     modality = _modality_from_post(post)
+    # Use AI-inferred topic hints from post if available; fall back to per-line regex
+    post_topic_hint = post.ai_topics[0] if getattr(post, "ai_topics", None) else None
     out: list[Question] = []
     seen: set[str] = set()
 
@@ -161,7 +175,7 @@ def extract_questions_from_post(post: RawPost) -> list[Question]:
                     latest_posted_at=post.posted_at,
                     role_tags=list(role_tags),
                     company_tags=list(company_tags),
-                    topic=infer_topic(candidate),
+                    topic=infer_topic(candidate) or post_topic_hint or "综合",
                     modality_origin=modality,
                 )
             )

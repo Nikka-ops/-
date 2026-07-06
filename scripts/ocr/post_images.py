@@ -57,6 +57,18 @@ def parse_ocr_pages(text: str) -> list[str]:
     return _parse(text)
 
 
+def _referer_for_url(url: str) -> str:
+    host = urlparse(url).netloc.lower()
+    if "xhscdn" in host or "xiaohongshu" in host:
+        return "https://www.xiaohongshu.com/"
+    if "nowcoder" in host:
+        return "https://www.nowcoder.com/"
+    return ""
+
+
+_DOWNLOAD_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
+
 def download_post_images(
     post: RawPost,
     *,
@@ -68,7 +80,6 @@ def download_post_images(
     if not urls:
         return _local_image_paths(post)
 
-    getter = http_get or requests.get
     key = _cache_key(post)
     note_dir = asset_root / key
     note_dir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +88,12 @@ def download_post_images(
         path = note_dir / f"{index:03d}{_extension_from_url(url)}"
         if not path.is_file():
             try:
-                resp = getter(url, timeout=timeout)
+                headers = {"User-Agent": _DOWNLOAD_UA}
+                ref = _referer_for_url(url)
+                if ref:
+                    headers["Referer"] = ref
+                getter = http_get or requests.get
+                resp = getter(url, headers=headers, timeout=timeout)
                 resp.raise_for_status()
                 path.write_bytes(resp.content)
             except Exception:
@@ -85,6 +101,25 @@ def download_post_images(
         if path.is_file():
             paths.append(path)
     return paths
+
+
+def download_images_batch(
+    posts: list[RawPost],
+    *,
+    asset_root: Path = Path("corpus_cache/assets/posts"),
+) -> list[RawPost]:
+    """Download remote images for all posts and update asset_paths to local paths.
+
+    Decoupled from OCR — run this first so images are cached regardless of deep mode.
+    """
+    result: list[RawPost] = []
+    for post in posts:
+        if _remote_image_urls(post):
+            paths = download_post_images(post, asset_root=asset_root)
+            if paths:
+                post.asset_paths = [str(p) for p in paths]
+        result.append(post)
+    return result
 
 
 def ocr_image_paths(

@@ -330,8 +330,7 @@ function showRolePending(role) {
   $("feedError").hidden = true;
   renderCompanyChips();
   $("feedHint").hidden = false;
-  const heroDesc = $("feedHint").querySelector(".hero-desc");
-  if (heroDesc) heroDesc.innerHTML = `「${role.label}」暂无面经库 — 点 <strong>构建面经库</strong> 联网抓取，或等待自动读取本地缓存`;
+  if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = `「${role.label}」暂无面经库 — 点击「构建面经库」开始`;
   const emptyP = $("feedEmpty").querySelector("p");
   if (emptyP) {
     emptyP.textContent = `「${role.label}」还没有已保存的面经库`;
@@ -604,23 +603,41 @@ function setViewMode(mode) {
   $("viewPosts").classList.toggle("active", mode === "posts");
   $("viewBank").classList.toggle("active", mode === "bank");
   $("viewJobs").classList.toggle("active", mode === "jobs");
-  $("exportJson").hidden = mode === "jobs";
-  $("exportBank").hidden = mode === "jobs";
-  $("exportMd").hidden = mode === "jobs";
+  if ($("viewMock")) $("viewMock").classList.toggle("active", mode === "mock");
+
+  // context actions in tab bar
+  $("exportJson").hidden = mode === "jobs" || mode === "mock";
+  $("exportBank").hidden = mode === "jobs" || mode === "mock";
+  $("exportMd").hidden   = mode === "jobs" || mode === "mock";
   $("exportJobs").hidden = mode !== "jobs";
   $("genPrepBtn").hidden = mode !== "bank";
-  if ($("trendsBtn")) $("trendsBtn").hidden = mode !== "posts";
-  if ($("mockBtn")) $("mockBtn").hidden = mode !== "bank";
+  if ($("trendsBtn"))  $("trendsBtn").hidden  = mode !== "posts";
+  if ($("mockBtn"))    $("mockBtn").hidden    = mode !== "bank";
+  if ($("reviewBtn"))  $("reviewBtn").hidden  = mode !== "bank";
   if ($("ragSearchBar")) $("ragSearchBar").hidden = mode !== "bank";
   if ($("ragResults") && mode !== "bank") $("ragResults").hidden = true;
+
+  // mock view panel
+  if ($("mockView")) $("mockView").hidden = mode !== "mock";
+
   syncSourceFilterBar();
   syncBankFilterBar();
   renderCompanyChips();
   if (mode === "jobs") {
     loadLatestJobsSnapshot();
+  } else if (mode === "mock") {
+    onEnterMockView();
   } else {
     renderCurrentView();
   }
+}
+
+function switchToMock() {
+  setViewMode("mock");
+}
+
+function heroFetchJobsHandler() {
+  setViewMode("jobs");
 }
 
 function normalizeBankQuestions(rows) {
@@ -926,7 +943,7 @@ function renderJobsView() {
   $("jobsListView").hidden = list.length === 0 && !jobsLoading;
   $("feedEmpty").hidden = list.length > 0 || total > 0 || jobsLoading;
   $("feedHint").hidden = searching || total > 0 || jobsLoading || jobsLoadError;
-  $("fetchJobsInline").hidden = total > 0 || jobsLoading;
+  if ($("fetchJobsInline")) $("fetchJobsInline").hidden = total > 0 || jobsLoading;
   $("resetFilters").hidden = viewMode === "jobs" && total === 0;
 
   if (jobsLoadError) {
@@ -1254,52 +1271,95 @@ async function runFetchJobs() {
   }
 }
 
+// ── 题目详情抽屉 ────────────────────────────────────────────────────────────
+let _qdCurrentQ = null;
+
 function openQuestionModal(q) {
-  const related = (q.related_posts || []).length
-    ? q.related_posts
-    : (q.source_refs || [])
-        .map((url) => currentPosts.find((p) => p.url === url || p.source_url === url))
-        .filter(Boolean)
-        .slice(0, 6)
-        .map((p) => ({
-          url: p.source_url || p.url,
-          title: p.title || "面经原文",
-          source: p.source,
-          company_label: p.company_label || p.company || "",
-          posted_at: p.posted_at || "",
-        }));
-  const relatedHtml = related.length
-    ? `<div class="question-related"><h3>来源面经</h3><ul>${related
-        .map((p) => {
-          const src = sourceLabel(p.url || p.source, p.source);
-          return `<li><span class="pill ${src.cls}">${src.name}</span> <strong>${escapeHtml(p.company_label || "")}</strong> ${escapeHtml(p.title || "")}${p.url ? ` <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">原文</a>` : ""}</li>`;
-        })
-        .join("")}</ul></div>`
-    : "";
-  const srcLine = (q.source_labels || []).length
-    ? `<dt>来源</dt><dd>${escapeHtml(q.source_labels.join("、"))}</dd>`
-    : "";
-  $("modalBody").innerHTML = `
-    <div class="modal-head">
-      <span class="pill">#${q.rank}</span>
-      <span class="pill conf-${escapeHtml(q.confidence || "低频")}">${escapeHtml(q.confidence || "低频")}</span>
-      <span class="pill">出现 ${q.batch_count ?? q.freq ?? 1} 次</span>
-      <span class="pill topic">${escapeHtml(q.topic || "综合")}</span>
-    </div>
-    <h2>${escapeHtml(q.text)}</h2>
-    ${q.answer ? `<div class="question-answer"><h3>参考解答</h3><div class="answer-body">${escapeHtml(q.answer).replace(/\n/g, "<br>")}</div></div>` : ""}
-    ${(q.variants || []).length ? `<p class="cluster-variants"><strong>同类表述：</strong>${escapeHtml(q.variants.join("；"))}</p>` : ""}
-    <dl class="modal-dl">
-      <dt>公司</dt><dd>${escapeHtml((q.company_tags || []).join("、") || "未标注")}</dd>
-      <dt>岗位</dt><dd>${escapeHtml((q.role_tags || []).join("、") || "未标注")}</dd>
-      ${srcLine}
-      <dt>最近出现</dt><dd>${escapeHtml(q.latest_posted_at || "—")}</dd>
-      ${q.score != null ? `<dt>综合分</dt><dd>${q.score}</dd>` : ""}
-    </dl>
-    ${relatedHtml}
-  `;
-  $("cardModal").hidden = false;
+  _qdCurrentQ = q;
+  const qid    = q.cluster_id || String(q.rank);
+  const topic  = q.topic || "综合";
+  const freq   = q.batch_count ?? q.freq ?? 1;
+  const mastery = getMastery(qid);
+
+  $("qdTopic").textContent = topic;
+  $("qdFreq").textContent  = `出现 ${freq} 次`;
+  $("qdQuestion").textContent = q.text;
+  _qdSyncMastery(mastery);
+
+  // reset answer panel
+  $("qdAnswerContent").hidden = true;
+  const genBtn = $("qdGenBtn");
+  genBtn.hidden    = false;
+  genBtn.disabled  = false;
+  genBtn.textContent = "生成参考答案";
+
+  // show cached answer if already in question object
+  if (q.answer) {
+    _qdShowAnswer({ answer: q.answer, key_points: [], depth: "", pitfalls: "" });
+  }
+
+  $("questionDrawer").hidden = false;
 }
+
+function _qdSyncMastery(level) {
+  document.querySelectorAll(".mastery-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.level === level);
+  });
+}
+
+function closeQuestionDrawer() {
+  $("questionDrawer").hidden = true;
+  _qdCurrentQ = null;
+}
+
+function _qdShowAnswer(data) {
+  $("qdAnswer").textContent  = data.answer || "";
+  $("qdKeyPoints").innerHTML = (data.key_points || [])
+    .map((k) => `<span class="qd-keypoint-chip">${escapeHtml(k)}</span>`)
+    .join("");
+  $("qdDepth").textContent        = data.depth || "";
+  $("qdDepthSection").hidden      = !data.depth;
+  $("qdPitfall").textContent      = data.pitfalls || "";
+  $("qdPitfallSection").hidden    = !data.pitfalls;
+  $("qdAnswerContent").hidden     = false;
+  $("qdGenBtn").hidden            = true;
+}
+
+async function qdGenerateAnswer() {
+  if (!_qdCurrentQ) return;
+  const btn = $("qdGenBtn");
+  btn.disabled    = true;
+  btn.textContent = "AI 生成中…";
+  try {
+    const data = await postJson("/api/question/answer", {
+      question: _qdCurrentQ.text,
+      topic:    _qdCurrentQ.topic || "",
+      role:     currentBank?.role || "数据开发",
+      slug:     currentSlug || "",
+    });
+    if (data.error) throw new Error(data.error);
+    _qdShowAnswer(data);
+  } catch (e) {
+    btn.disabled    = false;
+    const msg = e.error || e.message || "";
+    btn.textContent = msg.includes("余额") ? "DeepSeek 余额不足，请充值" : "生成失败，点击重试";
+  }
+}
+
+$("qdGenBtn")?.addEventListener("click", qdGenerateAnswer);
+$("closeQDrawer")?.addEventListener("click", closeQuestionDrawer);
+$("qDrawerBackdrop")?.addEventListener("click", closeQuestionDrawer);
+document.querySelectorAll(".mastery-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!_qdCurrentQ) return;
+    const qid = _qdCurrentQ.cluster_id || String(_qdCurrentQ.rank);
+    setMastery(qid, btn.dataset.level);
+    _qdSyncMastery(btn.dataset.level);
+    document.querySelectorAll(`.mastery-dot[data-qid="${CSS.escape(qid)}"]`).forEach((dot) => {
+      dot.className = `mastery-dot mastery-${btn.dataset.level}`;
+    });
+  });
+});
 
 function openClusterModal(c) {
   openQuestionModal({
@@ -1316,6 +1376,7 @@ function openClusterModal(c) {
 }
 
 function renderCurrentView() {
+  if (viewMode === "mock") return;
   if (viewMode === "bank") renderBankView();
   else if (viewMode === "jobs") renderJobsView();
   else renderFeed();
@@ -1586,6 +1647,7 @@ async function autoLoadBank() {
   closeDrawer();
   setLoading(true);
   $("feedError").hidden = true;
+  if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = "正在加载面经库…";
   try {
     await refreshBankList();
     const preferredRole = techRoles.find((r) => r.id === selectedRoleId);
@@ -1609,6 +1671,8 @@ async function autoLoadBank() {
     showError(humanError(err));
   } finally {
     setLoading(false);
+    if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = currentBank ? "" : "暂无面经库 — 点击「构建面经库」开始";
+    updateMockBankStatus();
     renderCurrentView();
   }
 }
@@ -1655,10 +1719,11 @@ $("submitBank").addEventListener("click", runBuildBank);
 $("submitXhsScrape")?.addEventListener("click", runXhsScrapeSafe);
 $("submitXhsIncremental")?.addEventListener("click", runXhsIncremental);
 $("submitJobs").addEventListener("click", runFetchJobs);
-$("fetchJobsInline").addEventListener("click", runFetchJobs);
+if ($("fetchJobsInline")) $("fetchJobsInline").addEventListener("click", runFetchJobs);
 $("viewPosts").addEventListener("click", () => setViewMode("posts"));
-$("viewBank").addEventListener("click", () => setViewMode("bank"));
-$("viewJobs").addEventListener("click", () => setViewMode("jobs"));
+$("viewBank").addEventListener("click",  () => setViewMode("bank"));
+$("viewJobs").addEventListener("click",  () => setViewMode("jobs"));
+if ($("viewMock")) $("viewMock").addEventListener("click", () => setViewMode("mock"));
 $("searchQ").addEventListener("input", renderCurrentView);
 let roleInputTimer = null;
 $("role").addEventListener("input", () => {
@@ -1813,7 +1878,7 @@ function showPrepModal(pkg) {
 
 $("genPrepBtn").addEventListener("click", runGenPrep);
 if ($("trendsBtn")) $("trendsBtn").addEventListener("click", runTrends);
-if ($("mockBtn")) $("mockBtn").addEventListener("click", runMockInterview);
+if ($("mockBtn")) $("mockBtn").addEventListener("click", () => setViewMode("mock"));
 
 // ── 错题本 / 掌握度 ─────────────────────────────────────────────────────────
 const MASTERY_LEVELS = ["unknown", "fuzzy", "known"];
@@ -1841,6 +1906,129 @@ document.addEventListener("click", (e) => {
   dot.className = `mastery-dot mastery-${next}`;
   dot.title = next === "known" ? "已掌握" : next === "fuzzy" ? "模糊" : "待学";
 });
+
+// ── 复习模式 ────────────────────────────────────────────────────────────────
+let _reviewQueue = [];
+let _reviewIdx   = 0;
+let _reviewStats = { known: 0, fuzzy: 0, unknown: 0 };
+
+function startReview() {
+  const all = bankQuestionRows();
+  if (!all.length) { alert("请先加载题库"); return; }
+
+  // 优先「未学」，其次「模糊」；已掌握的跳过（除非全部都掌握了）
+  let queue = all.filter((q) => {
+    const m = getMastery(q.cluster_id || String(q.rank));
+    return m === "unknown" || m === "fuzzy";
+  });
+  if (!queue.length) queue = [...all]; // 全掌握了就全部再来一遍
+
+  // 按 unknown → fuzzy，频次内降序
+  queue.sort((a, b) => {
+    const ma = getMastery(a.cluster_id || String(a.rank));
+    const mb = getMastery(b.cluster_id || String(b.rank));
+    if (ma !== mb) return ma === "unknown" ? -1 : 1;
+    return (b.batch_count ?? 1) - (a.batch_count ?? 1);
+  });
+
+  _reviewQueue = queue;
+  _reviewIdx   = 0;
+  _reviewStats = { known: 0, fuzzy: 0, unknown: 0 };
+
+  $("reviewDone").hidden  = true;
+  $("reviewCard").hidden  = false;
+  $("reviewStage") // may not exist — use parent
+  $("reviewOverlay").hidden = false;
+  _reviewShowCurrent();
+}
+
+function _reviewShowCurrent() {
+  const q = _reviewQueue[_reviewIdx];
+  if (!q) { _reviewFinish(); return; }
+
+  $("reviewProgress").textContent = `${_reviewIdx + 1} / ${_reviewQueue.length}`;
+  $("reviewCardTopic").textContent = q.topic || "综合";
+  $("reviewCardQuestion").textContent = q.text;
+
+  // Reset card state
+  $("reviewCardAnswer").hidden = true;
+  $("reviewActions").hidden    = true;
+  $("reviewRevealBtn").hidden  = false;
+  $("reviewRevealBtn").textContent = "查看参考答案";
+  $("reviewAnswerText").textContent = "";
+  $("reviewKeyPoints").innerHTML = "";
+}
+
+async function _reviewReveal() {
+  const q = _reviewQueue[_reviewIdx];
+  const btn = $("reviewRevealBtn");
+  btn.disabled    = true;
+  btn.textContent = "加载中…";
+
+  // Try to get AI answer (non-blocking — show actions even if it fails)
+  try {
+    const data = await postJson("/api/question/answer", {
+      question: q.text,
+      topic:    q.topic || "",
+      role:     currentBank?.role || "数据开发",
+      slug:     currentSlug || "",
+    });
+    if (data && data.answer && !data.error) {
+      $("reviewAnswerText").textContent = data.answer;
+      $("reviewKeyPoints").innerHTML = (data.key_points || [])
+        .map((k) => `<span class="qd-keypoint-chip">${escapeHtml(k)}</span>`).join("");
+    } else {
+      $("reviewAnswerText").textContent = data?.error || "（暂无参考答案）";
+    }
+  } catch (e) {
+    $("reviewAnswerText").textContent = "（答案生成失败，请充值 DeepSeek 后重试）";
+  }
+
+  $("reviewCardAnswer").hidden = false;
+  $("reviewActions").hidden    = false;
+  btn.hidden = true;
+}
+
+function _reviewMark(level) {
+  const q = _reviewQueue[_reviewIdx];
+  const qid = q.cluster_id || String(q.rank);
+  setMastery(qid, level);
+  _reviewStats[level] = (_reviewStats[level] || 0) + 1;
+
+  // Update dot in background list
+  document.querySelectorAll(`.mastery-dot[data-qid="${CSS.escape(qid)}"]`).forEach((dot) => {
+    dot.className = `mastery-dot mastery-${level}`;
+  });
+
+  _reviewIdx++;
+  _reviewShowCurrent();
+}
+
+function _reviewFinish() {
+  $("reviewCard").hidden   = true;
+  $("reviewActions").hidden = true;
+  $("reviewDone").hidden   = false;
+  const { known = 0, fuzzy = 0, unknown = 0 } = _reviewStats;
+  $("reviewDoneSummary").textContent =
+    `掌握 ${known} 题，模糊 ${fuzzy} 题，未掌握 ${unknown} 题`;
+}
+
+function closeReview() {
+  $("reviewOverlay").hidden = true;
+  renderCurrentView();
+}
+
+// Wire up
+$("reviewRevealBtn")?.addEventListener("click", _reviewReveal);
+$("reviewExitBtn")?.addEventListener("click", closeReview);
+$("reviewExitDoneBtn")?.addEventListener("click", closeReview);
+$("reviewAgainBtn")?.addEventListener("click", startReview);
+document.querySelectorAll(".review-btn").forEach((btn) => {
+  btn.addEventListener("click", () => _reviewMark(btn.dataset.level));
+});
+if ($("reviewBtn")) {
+  $("reviewBtn").addEventListener("click", startReview);
+}
 
 // ── 考点趋势 ────────────────────────────────────────────────────────────────
 async function runTrends() {
@@ -1900,64 +2088,137 @@ function showTrendsModal(d) {
   $("cardModal").hidden = false;
 }
 
-// ── 模拟面试 ────────────────────────────────────────────────────────────────
-let _mockSession = null;
+// ── 模拟面试（内嵌面板）────────────────────────────────────────────────────
+let _mockSid = null;
 
-async function runMockInterview() {
-  const role = currentBank?.role || "数据开发";
-  const slug = currentSlug || "";
-  try {
-    const data = await postJson("/api/mock/start", { role, slug });
-    if (data.error) throw new Error(data.error);
-    _mockSession = { id: data.session_id, total: data.total };
-    showMockModal(data.question, data.progress, "");
-  } catch (e) {
-    alert("模拟面试启动失败：" + e.message);
+function _mockChat(role, label, text) {
+  const chat = $("mockChat");
+  if (!chat) return;
+  const div = document.createElement("div");
+  div.className = `mock-msg ${role}`;
+  div.innerHTML = `<span class="mock-msg-label">${escapeHtml(label)}</span>
+    <div class="mock-msg-bubble">${escapeHtml(text)}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function _mockSetProgress(prog) {
+  if ($("mockProgress")) $("mockProgress").textContent = prog || "";
+}
+
+function _mockSetSubmitting(loading) {
+  const btn = $("mockSubmitBtn");
+  if (btn) { btn.disabled = loading; btn.textContent = loading ? "等待面试官…" : "提交回答"; }
+  if ($("mockSkipBtn")) $("mockSkipBtn").disabled = loading;
+  if ($("mockAnswerInput")) $("mockAnswerInput").disabled = loading;
+}
+
+// 切到 mock tab 时更新题库状态提示
+function updateMockBankStatus() {
+  const el = $("mockBankStatus");
+  if (!el) return;
+  if (currentBank && currentSlug) {
+    const total = currentBankQuestions.length || "?";
+    el.textContent = `已加载「${currentBank.role || currentSlug}」· ${total} 题`;
+  } else {
+    el.textContent = "请先加载题库（切到「题库」标签）";
   }
 }
 
-function showMockModal(question, progress, lastComment) {
-  $("modalBody").innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h2 style="margin:0;font-size:16px">模拟面试</h2>
-      <span style="font-size:12px;color:var(--muted)">${escapeHtml(progress || "")}</span>
-    </div>
-    ${lastComment ? `<div class="mock-comment">${escapeHtml(lastComment)}</div>` : ""}
-    <div class="mock-question">${escapeHtml(question)}</div>
-    <textarea id="mockAnswer" rows="5" placeholder="输入你的回答…" style="width:100%;box-sizing:border-box;margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font);font-size:13px;resize:vertical;background:var(--surface);color:var(--text)"></textarea>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="primary" onclick="submitMockAnswer()" style="flex:1">提交回答</button>
-      <button class="ghost" onclick="$('cardModal').hidden=true">结束面试</button>
-    </div>`;
-  $("cardModal").hidden = false;
-  document.getElementById("mockAnswer")?.focus();
-}
-
-async function submitMockAnswer() {
-  const ans = (document.getElementById("mockAnswer")?.value || "").trim();
-  if (!ans) return;
-  const btn = document.querySelector("#modalBody button.primary");
-  if (btn) { btn.disabled = true; btn.textContent = "等待面试官…"; }
-
+async function _startMockSession() {
+  if (!currentSlug) { alert("请先切到「题库」标签加载题库"); return; }
+  const background = ($("mockBackground")?.value || "").trim();
+  const role = currentBank?.role || "数据开发";
+  const btn = $("startMockBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "AI 选题中…"; }
   try {
-    const data = await postJson("/api/mock/reply", {
-      session_id: _mockSession?.id,
-      answer: ans,
+    const data = await postJson("/api/mock/start", {
+      role,
+      slug: currentSlug,
+      background,
     });
     if (data.error) throw new Error(data.error);
+    _mockSid = data.session_id;
+
+    // 切到面试界面
+    $("mockSetup").hidden = true;
+    $("mockSession").hidden = false;
+    $("mockFinished").hidden = true;
+    $("mockAnswerArea").hidden = false;
+    $("mockChat").innerHTML = "";
+    _mockSetProgress(data.progress);
+    _mockChat("interviewer", "面试官", data.question);
+    $("mockAnswerInput")?.focus();
+  } catch (e) {
+    alert("启动失败：" + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "开始面试"; }
+  }
+}
+
+async function _submitMockAnswer(skipAnswer) {
+  const ans = skipAnswer ? "（跳过）" : ($("mockAnswerInput")?.value || "").trim();
+  if (!ans && !skipAnswer) return;
+  if (!_mockSid) return;
+
+  // show candidate bubble
+  if (!skipAnswer) _mockChat("candidate", "你", ans);
+  if ($("mockAnswerInput")) $("mockAnswerInput").value = "";
+  _mockSetSubmitting(true);
+
+  try {
+    const data = await postJson("/api/mock/reply", { session_id: _mockSid, answer: ans });
+    if (data.error) throw new Error(data.error);
+
+    if (data.comment) _mockChat("comment", "点评", data.comment);
+    _mockSetProgress(data.progress);
+
     if (data.finished) {
-      $("modalBody").innerHTML = `
-        <h2 style="margin:0 0 12px">面试结束</h2>
-        <div class="mock-comment">${escapeHtml(data.comment)}</div>
-        <p style="margin-top:16px;color:var(--muted);font-size:13px">感谢参与！可重新点击「模拟面试」再次练习。</p>
-        <button class="primary" onclick="$('cardModal').hidden=true" style="margin-top:12px">关闭</button>`;
+      $("mockAnswerArea").hidden = true;
+      $("mockFinished").hidden = false;
     } else {
-      showMockModal(data.next_question, data.progress, data.comment);
+      _mockChat("interviewer", data.is_followup ? "追问" : "面试官", data.next_question);
+      $("mockAnswerInput")?.focus();
     }
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = "提交回答"; }
-    alert("提交失败：" + e.message);
+    alert("提交失败：" + (e.message || e));
+  } finally {
+    _mockSetSubmitting(false);
   }
+}
+
+function _resetMockToSetup() {
+  _mockSid = null;
+  $("mockSetup").hidden = false;
+  $("mockSession").hidden = true;
+  $("mockFinished").hidden = true;
+  updateMockBankStatus();
+}
+
+// Wire up mock buttons
+$("startMockBtn")?.addEventListener("click", _startMockSession);
+$("mockSubmitBtn")?.addEventListener("click", () => _submitMockAnswer(false));
+$("mockSkipBtn")?.addEventListener("click",   () => _submitMockAnswer(true));
+$("mockQuitBtn")?.addEventListener("click",   _resetMockToSetup);
+$("mockRestartBtn")?.addEventListener("click", _resetMockToSetup);
+$("mockAnswerInput")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); _submitMockAnswer(false); }
+});
+
+// Called from setViewMode when switching to mock tab
+function onEnterMockView() {
+  // hide all other content panels
+  $("feedGrid").hidden = true;
+  $("feedSections").hidden = true;
+  $("bankListView").hidden = true;
+  $("bankSections").hidden = true;
+  $("jobsListView").hidden = true;
+  $("feedEmpty").hidden = true;
+  $("feedHint").hidden = true;
+  $("ragSearchBar").hidden = true;
+  $("ragResults").hidden = true;
+  if ($("jobTypeBar")) $("jobTypeBar").hidden = true;
+  updateMockBankStatus();
 }
 
 // ── RAG 语义搜索 ────────────────────────────────────────────────────────────

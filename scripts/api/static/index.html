@@ -65,6 +65,54 @@
     </div>
   </header>
 
+  <!-- 题目详情抽屉 -->
+  <div id="questionDrawer" class="drawer drawer-right" hidden>
+    <div class="drawer-backdrop" id="qDrawerBackdrop"></div>
+    <div class="drawer-panel qd-panel">
+      <div class="qd-header">
+        <div class="qd-meta">
+          <span id="qdTopic" class="chip"></span>
+          <span id="qdFreq" class="chip chip-muted"></span>
+        </div>
+        <button id="closeQDrawer" class="icon-btn" type="button">×</button>
+      </div>
+
+      <div class="qd-question" id="qdQuestion"></div>
+
+      <div class="qd-mastery-row">
+        <span class="qd-mastery-label">掌握度</span>
+        <div class="qd-mastery-btns" id="qdMasteryBtns">
+          <button data-level="unknown" class="mastery-btn">未学</button>
+          <button data-level="fuzzy"   class="mastery-btn">模糊</button>
+          <button data-level="known"   class="mastery-btn">掌握</button>
+        </div>
+      </div>
+
+      <div class="qd-answer-area" id="qdAnswerArea">
+        <button class="primary qd-gen-btn" id="qdGenBtn">生成参考答案</button>
+      </div>
+
+      <div id="qdAnswerContent" class="qd-answer-content" hidden>
+        <section class="qd-section">
+          <h4 class="qd-section-title">参考答案</h4>
+          <p id="qdAnswer" class="qd-answer-text"></p>
+        </section>
+        <section class="qd-section">
+          <h4 class="qd-section-title">考察点</h4>
+          <div id="qdKeyPoints" class="qd-keypoints"></div>
+        </section>
+        <section class="qd-section" id="qdDepthSection">
+          <h4 class="qd-section-title">深挖方向</h4>
+          <p id="qdDepth" class="qd-depth-text"></p>
+        </section>
+        <section class="qd-section" id="qdPitfallSection">
+          <h4 class="qd-section-title">常见误区</h4>
+          <p id="qdPitfall" class="qd-pitfall-text"></p>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <div id="settingsDrawer" class="drawer" hidden>
     <div class="drawer-backdrop" id="drawerBackdrop"></div>
     <div class="drawer-panel">
@@ -136,57 +184,130 @@
   </div>
 
   <main class="feed-main">
+
+    <!-- ① 主 Tab 栏：始终可见 -->
+    <div class="main-tab-bar" role="tablist">
+      <button type="button" id="viewPosts" class="main-tab active" role="tab">面经</button>
+      <button type="button" id="viewBank"  class="main-tab" role="tab">题库</button>
+      <button type="button" id="viewJobs"  class="main-tab" role="tab">在招岗位</button>
+      <button type="button" id="viewMock"  class="main-tab" role="tab">模拟面试</button>
+      <div class="tab-spacer"></div>
+      <!-- 上下文操作：随视图切换显示 -->
+      <button id="trendsBtn"  type="button" class="tab-action ghost" hidden>考点趋势</button>
+      <button id="mockBtn"    type="button" class="tab-action ghost" hidden>开始面试</button>
+      <button id="reviewBtn"  type="button" class="tab-action ghost" hidden>复习弱项</button>
+      <button id="genPrepBtn" type="button" class="tab-action primary" hidden>生成备考包</button>
+    </div>
+
+    <!-- ② 数据标题栏：加载数据后显示 -->
     <div id="feedMeta" class="feed-meta" hidden>
-      <div class="main-tab-bar" role="tablist">
-        <button type="button" id="viewPosts" class="main-tab active" role="tab">
-面经
-        </button>
-        <button type="button" id="viewBank" class="main-tab" role="tab">
-          题库
-        </button>
-        <button type="button" id="viewJobs" class="main-tab" role="tab">
-          在招岗位
-        </button>
-      </div>
       <div class="meta-info-bar">
         <div class="meta-left">
           <h1 id="bankTitle">面经库</h1>
           <p id="bankSubtitle" class="subtitle"></p>
         </div>
         <div class="meta-actions">
-          <button id="exportJson" type="button" class="ghost">导出面经 JSON</button>
+          <button id="exportJson" type="button" class="ghost">导出面经</button>
           <button id="exportBank" type="button" class="ghost">导出题库</button>
-          <button id="exportMd" type="button" class="ghost">频次报告</button>
-          <button id="exportJobs" type="button" class="ghost" hidden>导出岗位 JSON</button>
-          <button id="trendsBtn" type="button" class="ghost" hidden>考点趋势</button>
-        <button id="mockBtn" type="button" class="ghost" hidden>模拟面试</button>
-        <button id="genPrepBtn" type="button" class="primary" hidden>生成备考包</button>
+          <button id="exportMd"   type="button" class="ghost">频次报告</button>
+          <button id="exportJobs" type="button" class="ghost" hidden>导出岗位</button>
         </div>
       </div>
     </div>
 
+    <!-- ③ 首页 Hero（未加载数据时） -->
     <div id="feedHint" class="feed-hint-hero">
-      <div class="hero-icon">
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M5 31 A18.5 18.5 0 0 1 31 5" stroke="white" stroke-width="2.2" stroke-linecap="round" opacity="0.4"/>
-          <path d="M9 27 A13 13 0 0 1 27 9" stroke="white" stroke-width="2.2" stroke-linecap="round" opacity="0.65"/>
-          <path d="M13 23 A7 7 0 0 1 23 13" stroke="white" stroke-width="2.2" stroke-linecap="round" opacity="0.9"/>
-          <line x1="18" y1="18" x2="29" y2="7" stroke="white" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="18" cy="18" r="2.2" fill="white"/>
-        </svg>
+      <p class="hero-loading" id="heroLoadingMsg">正在加载面经库…</p>
+      <div class="hero-feature-grid">
+        <div class="hero-card" id="heroCardPosts" onclick="document.getElementById('toggleSettings').click()">
+          <div class="hero-card-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="4" y="5" width="20" height="3" rx="1.5" fill="currentColor" opacity=".9"/><rect x="4" y="11" width="14" height="3" rx="1.5" fill="currentColor" opacity=".7"/><rect x="4" y="17" width="17" height="3" rx="1.5" fill="currentColor" opacity=".5"/></svg>
+          </div>
+          <div class="hero-card-body">
+            <h3>面经</h3>
+            <p>小红书 + 牛客近 3 个月真实面经，AI 质检去重</p>
+          </div>
+        </div>
+        <div class="hero-card" id="heroCardBank" onclick="document.getElementById('toggleSettings').click()">
+          <div class="hero-card-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="9" stroke="currentColor" stroke-width="2.5" opacity=".3"/><circle cx="14" cy="14" r="5" stroke="currentColor" stroke-width="2.5" opacity=".6"/><circle cx="14" cy="14" r="1.8" fill="currentColor"/></svg>
+          </div>
+          <div class="hero-card-body">
+            <h3>高频题库</h3>
+            <p>按出现频次排序，覆盖 Spark / SQL / RAG / Agent 等方向</p>
+          </div>
+        </div>
+        <div class="hero-card" id="heroCardJobs" onclick="heroFetchJobsHandler()">
+          <div class="hero-card-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="5" y="9" width="18" height="13" rx="2" stroke="currentColor" stroke-width="2.2" opacity=".5"/><path d="M10 9V7a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2.2"/><line x1="5" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="1.5" opacity=".4"/></svg>
+          </div>
+          <div class="hero-card-body">
+            <h3>在招岗位</h3>
+            <p>互联网大厂实时 JD，一键对比岗位要求与题库覆盖</p>
+          </div>
+        </div>
+        <div class="hero-card" id="heroCardMock" onclick="switchToMock()">
+          <div class="hero-card-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 8h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-5 3V10a2 2 0 0 1 1-1.73" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" opacity=".7"/><circle cx="11" cy="14" r="1.2" fill="currentColor"/><circle cx="17" cy="14" r="1.2" fill="currentColor"/></svg>
+          </div>
+          <div class="hero-card-body">
+            <h3>模拟面试</h3>
+            <p>AI 担任面试官，随机抽题，实时点评追问</p>
+          </div>
+        </div>
       </div>
-      <h2 class="hero-title">面试雷达</h2>
-      <p class="hero-desc">聚焦 <strong>数据开发</strong>（数仓 / ETL / Spark / Flink）&amp; <strong>Agent 开发</strong>（RAG / MCP / LLM 应用）· 面经近 3 个月 · AI 质检去重</p>
-      <div class="hero-actions">
-        <button type="button" class="primary" id="heroOpenSettings">构建面经库</button>
-        <button type="button" class="ghost" id="heroFetchJobs">拉取在招岗位</button>
-      </div>
+      <button type="button" class="primary hero-cta" id="heroOpenSettings">构建面经库</button>
     </div>
+
     <div id="feedEmpty" class="feed-empty" hidden>
       <p>没有匹配的面经</p>
       <button type="button" id="resetFilters" class="ghost">清除筛选</button>
-      <button type="button" id="fetchJobsInline" class="primary" hidden>拉取在招岗位</button>
     </div>
+
+    <!-- 模拟面试视图 -->
+    <div id="mockView" class="mock-view" hidden>
+
+      <!-- 准备阶段 -->
+      <div id="mockSetup" class="mock-setup">
+        <div class="mock-setup-card">
+          <h2>模拟面试</h2>
+          <p class="mock-setup-desc">填写技术背景，AI 面试官从题库挑选最匹配的题目，并结合你的项目经验追问。</p>
+          <label class="mock-label">你的技术背景 / 简历摘要</label>
+          <textarea id="mockBackground" class="mock-bg-input" rows="5"
+            placeholder="例：3 年数仓经验，熟悉 Spark / Hive，搭过实时数仓（Flink），最近在做 RAG 项目，用 LangChain + Milvus。"></textarea>
+          <div class="mock-setup-meta">
+            <span class="mock-hint" id="mockBankStatus">题库未加载</span>
+            <button class="primary" id="startMockBtn">开始面试</button>
+          </div>
+          <p class="mock-ai-tip">需配置 DeepSeek API Key 以启用 AI 选题；否则按高频顺序出题</p>
+        </div>
+      </div>
+
+      <!-- 面试进行中 -->
+      <div id="mockSession" class="mock-session" hidden>
+        <div class="mock-session-header">
+          <span id="mockProgress" class="mock-progress-tag">1 / 8</span>
+          <button class="ghost mock-quit-btn" id="mockQuitBtn">结束面试</button>
+        </div>
+        <div id="mockChat" class="mock-chat"></div>
+        <div id="mockAnswerArea" class="mock-answer-area">
+          <textarea id="mockAnswerInput" class="mock-answer-input" rows="4"
+            placeholder="输入你的回答…（口语即可，AI 能理解）"></textarea>
+          <div class="mock-answer-actions">
+            <button class="primary" id="mockSubmitBtn">提交回答</button>
+            <button class="ghost"    id="mockSkipBtn">跳过此题</button>
+          </div>
+        </div>
+        <div id="mockFinished" class="mock-finished" hidden>
+          <div class="mock-finished-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2" opacity=".3"/><path d="M10 16l4 4 8-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>面试结束</h3>
+          <button class="ghost" id="mockRestartBtn">再来一次</button>
+        </div>
+      </div>
+    </div>
+
     <div id="feedGrid" class="feed-grid" role="list" hidden></div>
     <div id="feedSections" class="feed-sections" hidden></div>
     <div id="ragSearchBar" class="rag-search-bar" hidden>
@@ -194,6 +315,41 @@
       <button id="ragSearchBtn" type="button" class="ghost">搜索</button>
     </div>
     <div id="ragResults" class="rag-results" hidden></div>
+
+    <!-- 复习模式 overlay -->
+    <div id="reviewOverlay" class="review-overlay" hidden>
+      <div class="review-header">
+        <span id="reviewProgress" class="review-progress">0 / 0</span>
+        <button class="ghost review-exit-btn" id="reviewExitBtn">退出复习</button>
+      </div>
+      <div class="review-stage">
+        <div id="reviewCard" class="review-card">
+          <div class="review-card-topic" id="reviewCardTopic"></div>
+          <div class="review-card-question" id="reviewCardQuestion"></div>
+          <button class="ghost review-reveal-btn" id="reviewRevealBtn">查看参考答案</button>
+          <div id="reviewCardAnswer" class="review-card-answer" hidden>
+            <div class="review-answer-label">参考答案</div>
+            <div id="reviewAnswerText" class="review-answer-text"></div>
+            <div id="reviewKeyPoints" class="review-keypoints"></div>
+          </div>
+        </div>
+        <div class="review-actions" id="reviewActions" hidden>
+          <button class="review-btn review-btn-unknown" data-level="unknown">没掌握</button>
+          <button class="review-btn review-btn-fuzzy"   data-level="fuzzy">模糊</button>
+          <button class="review-btn review-btn-known"   data-level="known">掌握了</button>
+        </div>
+      </div>
+      <div id="reviewDone" class="review-done" hidden>
+        <div class="review-done-icon">✓</div>
+        <h3>本轮复习完成</h3>
+        <p id="reviewDoneSummary"></p>
+        <div class="review-done-actions">
+          <button class="primary" id="reviewAgainBtn">再刷一遍</button>
+          <button class="ghost"   id="reviewExitDoneBtn">退出</button>
+        </div>
+      </div>
+    </div>
+
     <ol id="bankListView" class="bank-rank-list" hidden></ol>
     <div id="bankSections" class="bank-sections" hidden></div>
     <div id="techStackPanel" class="tech-stack-panel" hidden></div>
@@ -205,7 +361,7 @@
     <ol id="jobsListView" class="bank-rank-list jobs-list" hidden></ol>
     <div id="feedLoading" class="feed-loading" hidden>
       <div class="spinner"></div>
-      <p>加载面经库…</p>
+      <p>加载中…</p>
     </div>
     <p id="feedError" class="feed-error" hidden></p>
   </main>

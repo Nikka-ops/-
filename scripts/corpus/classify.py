@@ -44,8 +44,8 @@ _COMPANY_ALIASES: dict[str, str] = {
     "阿里": "阿里巴巴",
     "阿里巴巴": "阿里巴巴",
     "alibaba": "阿里巴巴",
-    "蚂蚁": "蚂蚁集团",
-    "蚂蚁集团": "蚂蚁集团",
+    "蚂蚁": "阿里巴巴",
+    "蚂蚁集团": "阿里巴巴",
     "美团": "美团",
     "meituan": "美团",
     "快手": "快手",
@@ -79,6 +79,7 @@ _COMPANY_ALIASES: dict[str, str] = {
 _ROLE_MARKERS = re.compile(
     r"(?:"
     r"开发|工程师|产品|算法|运营|设计|分析|测试|架构|研发|实习|"
+    r"数开|数仓|ETL|大数据|"
     r"经理|专员|岗|科学家|研究员|顾问|管培|校招|社招|"
     r"agent|llm|rag"
     r")",
@@ -112,14 +113,14 @@ def _canonical_company(name: str) -> str:
     cleaned = name.strip()
     if not cleaned or _YEAR_ONLY.match(cleaned):
         return ""
-    normalized = normalize_company_name(cleaned)
-    if normalized:
-        return normalized
     key = cleaned.lower()
     for alias, canonical in sorted(_COMPANY_ALIASES.items(), key=lambda x: -len(x[0])):
         if alias.lower() == key or alias.lower() in key:
             parent = normalize_company_name(canonical) or canonical
             return parent
+    normalized = normalize_company_name(cleaned)
+    if normalized:
+        return normalized
     return ""
 
 
@@ -272,6 +273,19 @@ def classify_search_queries(
                 add(f"{kw} 面经")
                 add(f"{preset.search_as} {kw}")
                 add(kw)
+            if preset.id == "data":
+                for extra in (
+                    "数开",
+                    "数仓工程师",
+                    "数据开发工程师",
+                    "大数据开发工程师",
+                    "离线数仓",
+                    "实时数仓",
+                    "Flink开发",
+                    "Spark开发",
+                ):
+                    add(f"{extra} 面经")
+                    add(f"{extra} 面试")
         for company in companies:
             add(f"{company} {role} 面经")
             add(f"{company} {role} 实习 面经")

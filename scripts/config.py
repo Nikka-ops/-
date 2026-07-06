@@ -32,6 +32,25 @@ def _load_env_file(path: Path) -> None:
             os.environ[key] = val
 
 
+def focus_role_ids() -> list[str]:
+    """Active scrape/UI role ids (default: 数据开发/数仓 + Agent 开发)."""
+    from scripts.corpus.tech_roles import canonical_role_id
+
+    raw = os.environ.get("INTERVIEWRADAR_FOCUS_ROLE_IDS", "data,ai_app").strip()
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in raw.replace(";", ",").split(","):
+        rid = canonical_role_id(part.strip())
+        if rid and rid not in seen:
+            seen.add(rid)
+            out.append(rid)
+    return out or ["data", "ai_app"]
+
+
+def focus_role_ids_csv() -> str:
+    return ",".join(focus_role_ids())
+
+
 def bootstrap_env() -> None:
     """Load optional .env from repo root and current working directory."""
     for base in (_PKG_ROOT, Path.cwd()):
@@ -101,48 +120,183 @@ def boss_cdp_enabled() -> bool:
     return cdp_port_open(boss_cdp_port())
 
 
+def xhs_cdp_port() -> int:
+    """Dedicated CDP port for Xiaohongshu (avoid Boss 9222)."""
+    raw = os.environ.get("XHS_CDP_PORT", "9233").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 9233
+
+
+def xhs_cdp_profile() -> Path:
+    raw = os.environ.get("XHS_CDP_PROFILE", "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".interview-radar" / "xhs-chrome-profile"
+
+
+def xhs_cdp_enabled() -> bool:
+    """Use real Chrome CDP for XHS (anti-detection). Default on; set XHS_CDP=0 for Playwright."""
+    raw = os.environ.get("XHS_CDP", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def xhs_scrape_timeout_seconds() -> int:
+    """MediaCrawler subprocess timeout per keyword batch (CDP runs can be slow)."""
+    raw = os.environ.get("XHS_SCRAPE_TIMEOUT_SECONDS", "1800").strip()
+    try:
+        return max(300, min(7200, int(raw)))
+    except ValueError:
+        return 1800
+
+
+def spider_xhs_home() -> Path:
+    env = os.environ.get("SPIDER_XHS_HOME")
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / ".spider_xhs"
+
+
 def mediacrawler_home() -> Path:
+    """Deprecated: kept for old export paths only."""
     env = os.environ.get("MEDIACRAWLER_HOME")
     if env:
         return Path(env).expanduser()
     return Path.home() / ".mediacrawler"
 
 
+def xhs_cookies_str() -> str:
+    """Full Xiaohongshu cookie header for Spider_XHS API."""
+    for key in ("XHS_COOKIES", "COOKIES", "INTERVIEWRADAR_XHS_COOKIES"):
+        val = os.environ.get(key, "").strip()
+        if val:
+            return val
+    from scripts.jobs.cdp_client import cdp_extract_cookies_string, cdp_port_open
+
+    if xhs_cdp_enabled() and cdp_port_open(xhs_cdp_port()):
+        live = cdp_extract_cookies_string(xhs_cdp_port())
+        if live:
+            return live
+    ws = xhs_web_session()
+    if ws:
+        return f"web_session={ws}"
+    return ""
+
+
+def xhs_cookies_source() -> str:
+    for key in ("XHS_COOKIES", "COOKIES", "INTERVIEWRADAR_XHS_COOKIES"):
+        if os.environ.get(key, "").strip():
+            return f"env:{key}"
+    from scripts.jobs.cdp_client import cdp_extract_cookies_string, cdp_port_open
+
+    if xhs_cdp_enabled() and cdp_port_open(xhs_cdp_port()):
+        if cdp_extract_cookies_string(xhs_cdp_port()):
+            return f"cdp:{xhs_cdp_port()}"
+    for key in ("XHS_WEB_SESSION", "INTERVIEWRADAR_XHS_WEB_SESSION"):
+        if os.environ.get(key, "").strip():
+            return f"env:{key}"
+    if _xhs_web_session_from_mediancrawler():
+        return "mediacrawler:legacy"
+    return "none"
+
+
+def xhs_cookies_configured() -> bool:
+    cookies = xhs_cookies_str()
+    return len(cookies) > 30 and "web_session=" in cookies
+
+
+def _xhs_web_session_from_mediancrawler() -> str:
+    """Read web_session from ~/.mediacrawler when .env is unset."""
+    import re
+
+    config_path = mediacrawler_home() / "config" / "base_config.py"
+    if not config_path.is_file():
+        return ""
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        if not line.startswith("COOKIES ="):
+            continue
+        match = re.search(r'web_session=([^"\']+)', line)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
 def xhs_web_session() -> str:
     """`web_session` cookie value for Xiaohongshu (paste from browser DevTools)."""
-    return (
-        os.environ.get("XHS_WEB_SESSION")
-        or os.environ.get("INTERVIEWRADAR_XHS_WEB_SESSION")
-        or ""
-    ).strip()
+    for key in ("XHS_WEB_SESSION", "INTERVIEWRADAR_XHS_WEB_SESSION"):
+        val = os.environ.get(key, "").strip()
+        if val:
+            return val
+    return _xhs_web_session_from_mediancrawler()
+
+
+def xhs_web_session_source() -> str:
+    """Where the active web_session came from: env, mediancrawler, or none."""
+    for key in ("XHS_WEB_SESSION", "INTERVIEWRADAR_XHS_WEB_SESSION"):
+        if os.environ.get(key, "").strip():
+            return f"env:{key}"
+    if _xhs_web_session_from_mediancrawler():
+        return "mediacrawler:legacy"
+    return "none"
 
 
 def xhs_web_session_configured() -> bool:
-    return len(xhs_web_session()) > 20
+    return xhs_cookies_configured()
 
 
 def xhs_batch_pause_seconds() -> float:
-    raw = os.environ.get("XHS_BATCH_PAUSE_SECONDS", "60").strip()
+    raw = os.environ.get("XHS_BATCH_PAUSE_SECONDS", "30").strip()
     try:
-        return max(15.0, float(raw))
+        return max(10.0, float(raw))
     except ValueError:
-        return 60.0
+        return 30.0
 
 
 def xhs_max_keywords_per_run() -> int:
-    raw = os.environ.get("XHS_MAX_KEYWORDS_PER_RUN", "8").strip()
+    raw = os.environ.get("XHS_MAX_KEYWORDS_PER_RUN", "32").strip()
     try:
         return max(1, min(50, int(raw)))
     except ValueError:
-        return 8
+        return 32
+
+
+def xhs_daily_keywords_per_day() -> int:
+    """Daily incremental scrape: XHS keywords per cron run (primary source)."""
+    raw = os.environ.get("XHS_DAILY_KEYWORDS_PER_DAY", "24").strip()
+    try:
+        return max(1, min(50, int(raw)))
+    except ValueError:
+        return 24
+
+
+def nowcoder_daily_queries_per_day() -> int:
+    """Daily incremental: Nowcoder supplement (lower priority than XHS)."""
+    raw = os.environ.get("NOWCODER_DAILY_QUERIES_PER_DAY", "16").strip()
+    try:
+        return max(0, min(50, int(raw)))
+    except ValueError:
+        return 16
+
+
+def xhs_min_posts_skip_nowcoder() -> int:
+    raw = os.environ.get("XHS_MIN_POSTS_SKIP_NOWCODER", "5").strip()
+    try:
+        return max(1, min(500, int(raw)))
+    except ValueError:
+        return 5
 
 
 def xhs_export_max_age_days() -> int:
-    raw = os.environ.get("XHS_EXPORT_MAX_AGE_DAYS", "365").strip()
+    raw = os.environ.get("XHS_EXPORT_MAX_AGE_DAYS", "90").strip()
     try:
         return max(7, min(730, int(raw)))
     except ValueError:
-        return 365
+        return 90
 
 
 def xhs_export_max_files() -> int:
@@ -155,19 +309,38 @@ def xhs_export_max_files() -> int:
 
 def xhs_crawler_max_notes() -> int:
     """MediaCrawler CRAWLER_MAX_NOTES_COUNT (per keyword)."""
-    raw = os.environ.get("XHS_CRAWLER_MAX_NOTES", "80").strip()
+    raw = os.environ.get("XHS_CRAWLER_MAX_NOTES", "50").strip()
     try:
         return max(15, min(200, int(raw)))
     except ValueError:
-        return 80
+        return 50
+
+
+def xhs_crawler_max_sleep_sec() -> int:
+    """MediaCrawler inter-request sleep (anti-detection)."""
+    raw = os.environ.get("XHS_CRAWLER_MAX_SLEEP_SEC", "3").strip()
+    try:
+        return max(1, min(15, int(raw)))
+    except ValueError:
+        return 3
 
 
 def full_scrape_recency_days() -> int:
-    raw = os.environ.get("FULL_SCRAPE_RECENCY_DAYS", "365").strip()
+    """面经时效窗口（默认近 3 个月）。"""
+    raw = os.environ.get("FULL_SCRAPE_RECENCY_DAYS", "90").strip()
     try:
         return max(30, min(730, int(raw)))
     except ValueError:
-        return 365
+        return 90
+
+
+def job_recency_days() -> int:
+    """官网/Boss 在招岗位发布日期窗口（默认近 3 个月）。"""
+    raw = os.environ.get("JOB_RECENCY_DAYS", "90").strip()
+    try:
+        return max(14, min(365, int(raw)))
+    except ValueError:
+        return 90
 
 
 def company_aliases_path() -> Path:
@@ -190,6 +363,12 @@ def deepseek_api_base() -> str:
 
 def deepseek_model() -> str:
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
+
+
+def deepseek_use_proxy() -> bool:
+    """默认直连 DeepSeek；仅 DEEPSEEK_USE_PROXY=1 时使用系统 HTTP_PROXY。"""
+    raw = os.environ.get("DEEPSEEK_USE_PROXY", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def post_ai_filter_enabled() -> bool:

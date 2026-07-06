@@ -13,7 +13,7 @@ from scripts.corpus.post_format import (
 )
 from scripts.corpus.post_text_merge import merge_article_and_ocr, post_article_text, strip_ocr_page_markers
 from scripts.corpus.company_normalize import normalize_company_name
-from scripts.corpus.role_match import score_post_for_bank
+from scripts.corpus.role_match import matches_target_role
 from scripts.discover.nowcoder_detail import enrich_nowcoder_text, extract_uuid_from_url, needs_full_fetch
 from scripts.models import RawPost
 
@@ -22,8 +22,6 @@ _UNKNOWN = "未标注"
 
 def post_company(post: RawPost) -> str:
     c = (post.company or "").strip()
-    if c:
-        c = normalize_company_name(c) or ""
     if not c:
         from scripts.corpus.classify import infer_company_from_text
 
@@ -31,7 +29,8 @@ def post_company(post: RawPost) -> str:
             p for p in (post.raw_text, post.content_text, post.locator_text, post.image_ocr_text) if p
         )
         c = infer_company_from_text(blob) or ""
-    return c or _UNKNOWN
+    normalized = normalize_company_name(c) or ""
+    return normalized or _UNKNOWN
 
 
 def _primary_text(post: RawPost) -> str:
@@ -108,11 +107,12 @@ def company_options_from_dicts(rows: list[dict]) -> list[dict]:
 def enrich_post_dict(post: RawPost, bank_role: str | None = None, *, for_display: bool = False) -> dict:
     work = post
     images_early = collect_image_urls(post.to_dict())
-    body_len = len((post.raw_text or post.content_text or "").replace(" ", ""))
-    if images_early and body_len < 80 and not (post.image_ocr_text or "").strip():
+    # Only run OCR during ingest (for_display=False). Display/API paths skip OCR to avoid
+    # loading ONNX models on every request, which causes multi-second hangs.
+    if images_early and not (post.image_ocr_text or "").strip() and not for_display:
         from scripts.ocr.post_images import enrich_post_with_image_ocr
 
-        work = enrich_post_with_image_ocr(post, network=not for_display)
+        work = enrich_post_with_image_ocr(post, network=True)
 
     d = work.to_dict()
     title = post_title(work)
@@ -153,9 +153,7 @@ def enrich_post_dict(post: RawPost, bank_role: str | None = None, *, for_display
         and work.extraction_quality == "text_only"
     )
     if bank_role:
-        score, mismatch = score_post_for_bank(work, bank_role)
-        d["role_match_score"] = round(score, 2)
-        d["role_mismatch"] = mismatch
+        d["role_mismatch"] = not matches_target_role(work, bank_role)
     else:
         d["role_mismatch"] = False
 
@@ -182,7 +180,12 @@ def serialize_posts(
     *,
     for_display: bool = False,
 ) -> list[dict]:
-    rows = [enrich_post_dict(p, bank_role=bank_role, for_display=for_display) for p in posts]
+    work = posts
+    if for_display:
+        from scripts.corpus.post_filter import should_display_post
+
+        work = [p for p in posts if should_display_post(p)]
+    rows = [enrich_post_dict(p, bank_role=bank_role, for_display=for_display) for p in work]
     rows.sort(
         key=lambda r: (r.get("posted_at") or "", r.get("title") or ""),
         reverse=True,

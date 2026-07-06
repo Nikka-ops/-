@@ -20,7 +20,8 @@ from scripts.connectors.xiaohongshu import XiaohongshuConnector
 from scripts.corpus.classify import classify_search_queries
 from scripts.corpus.group import taxonomy_summary
 from scripts.corpus.recency import filter_recent
-from scripts.scrape.mediacrawler_driver import MediaCrawlerDriver, MediaCrawlerScrapeError
+from scripts.scrape.xhs_export import run_safe_xhs_scrape
+from scripts.scrape.spider_xhs_driver import SpiderXHSScrapeError
 
 HEADERS = {
     "User-Agent": (
@@ -46,7 +47,7 @@ def main() -> int:
     parser.add_argument("--roles", nargs="+", default=["AI 应用开发"])
     parser.add_argument("--companies", nargs="+", default=["字节跳动", "美团"])
     parser.add_argument("--nowcoder-urls", nargs="*", default=[])
-    parser.add_argument("--xhs-live", action="store_true", help="Run MediaCrawler driver (needs login)")
+    parser.add_argument("--xhs-live", action="store_true", help="Run Spider_XHS driver (needs login)")
     parser.add_argument("--keywords", nargs="+", default=["字节 AI 应用开发 面经"])
     parser.add_argument("--out", default="corpus_cache/scrape_smoke_report.json")
     args = parser.parse_args()
@@ -63,13 +64,17 @@ def main() -> int:
 
     if args.xhs_live:
         try:
-            driver = MediaCrawlerDriver()
-            report["mediacrawler_home"] = str(driver.home)
-            path = driver.scrape_xhs(args.keywords, login_type="cookie")
-            result = XiaohongshuConnector(driver=driver, enable_image_ocr=False).search(args.keywords)
-            report["xiaohongshu"] = {"status": result.status, "message": result.message, "export": str(path)}
+            scrape_meta = run_safe_xhs_scrape(args.keywords, limit_keywords=False)
+            path = Path(scrape_meta["export_path"])
+            result = XiaohongshuConnector(export_path=str(path), enable_image_ocr=False).search([])
+            report["xiaohongshu"] = {
+                "status": result.status,
+                "message": result.message,
+                "export": str(path),
+                "driver": "spider_xhs",
+            }
             posts.extend(result.posts)
-        except (MediaCrawlerScrapeError, FileNotFoundError, ValueError) as exc:
+        except (SpiderXHSScrapeError, FileNotFoundError, ValueError) as exc:
             report["xiaohongshu"] = {"status": "degraded", "message": str(exc)}
 
     posts = filter_recent(posts, today=date.today())

@@ -10,7 +10,7 @@ from scripts.config import (
     boss_cdp_enabled,
     boss_cdp_port,
     boss_zhipin_cookie_configured,
-    mediacrawler_home,
+    spider_xhs_home,
     package_root,
     resolve_posts_fallback,
     sample_posts_path,
@@ -60,12 +60,17 @@ def main(argv: list[str] | None = None) -> int:
     else:
         lines.append(_warn("No local corpus yet — use examples/sample_raw_posts.json or scrape"))
 
-    mc = mediacrawler_home()
-    if (mc / "main.py").is_file():
-        lines.append(_ok(f"MediaCrawler found: {mc} (Xiaohongshu live scrape available)"))
+    home = spider_xhs_home()
+    if (home / "apis" / "xhs_pc_apis.py").is_file():
+        node_ok = (home / "node_modules").is_dir()
+        extra = "" if node_ok else " (run: cd ~/.spider_xhs && npm install)"
+        lines.append(_ok(f"Spider_XHS found: {home}{extra}"))
     else:
         lines.append(
-            _warn(f"MediaCrawler not at {mc} — optional; see docs/setup/mediacrawler.md")
+            _warn(
+                f"Spider_XHS not at {home} — clone: "
+                "git clone https://github.com/cv-cat/Spider_XHS.git ~/.spider_xhs"
+            )
         )
 
     from scripts.config import xhs_web_session_configured
@@ -73,10 +78,10 @@ def main(argv: list[str] | None = None) -> int:
 
     xhs = xhs_scrape_status()
     if xhs_web_session_configured():
-        lines.append(_ok("XHS web_session cookie configured (use dedicated spare account)"))
+        lines.append(_ok(f"XHS cookies configured ({xhs.get('cookie_source', 'env')})"))
     else:
         lines.append(
-            _warn("XHS_WEB_SESSION not set — Xiaohongshu scrape/import disabled; see .env")
+            _warn("XHS cookies not configured — login in CDP Chrome or set XHS_COOKIES; see docs/setup/spider_xhs.md")
         )
     export_n = xhs.get("export_files", 0)
     if export_n:

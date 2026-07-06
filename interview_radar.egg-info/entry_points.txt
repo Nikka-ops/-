@@ -1,0 +1,5 @@
+[console_scripts]
+interview-radar = scripts.run:main
+interview-radar-doctor = scripts.doctor:main
+interview-radar-jobs = scripts.run_jobs:main
+interview-radar-web = scripts.api.server:main

@@ -150,10 +150,19 @@ def search_nowcoder_moments(
                 if not payload.get("success"):
                     row["error"] = payload.get("msg") or "search failed"
                     break
-                data = payload.get("data") or {}
-                records = data.get("records") or []
+                data = payload.get("data")
+                if isinstance(data, list):
+                    records = []
+                    for item in data:
+                        if isinstance(item, dict):
+                            nested = item.get("records")
+                            records.extend(nested if isinstance(nested, list) else [item])
+                elif isinstance(data, dict):
+                    records = data.get("records") or []
+                else:
+                    records = []
                 row["pages"] = page
-                row["total_hits"] = data.get("total")
+                row["total_hits"] = data.get("total") if isinstance(data, dict) else len(records)
                 if not records:
                     break
                 page_added = 0

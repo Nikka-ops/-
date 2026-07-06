@@ -90,21 +90,32 @@ def _post_api(
     body: dict,
     *,
     timeout: int = 30,
+    retries: int = 3,
 ) -> dict | None:
     url = f"{deepseek_api_base()}{endpoint}"
     headers = {
         "Authorization": f"Bearer {deepseek_api_key()}",
         "Content-Type": "application/json",
     }
-    for trust_env in ((True, False) if deepseek_use_proxy() else (False,)):
-        try:
-            with requests.Session() as s:
-                s.trust_env = trust_env
-                resp = s.post(url, headers=headers, json=body, timeout=timeout)
-                resp.raise_for_status()
-                return resp.json()
-        except (requests.RequestException, ValueError):
-            continue
+    trust_envs = (True, False) if deepseek_use_proxy() else (False,)
+    for attempt in range(retries):
+        if attempt:
+            time.sleep(min(2.0 * (2 ** (attempt - 1)), 10.0))
+        for trust_env in trust_envs:
+            try:
+                with requests.Session() as s:
+                    s.trust_env = trust_env
+                    resp = s.post(url, headers=headers, json=body, timeout=timeout)
+                    if resp.status_code == 402:
+                        raise RuntimeError("DeepSeek 账户余额不足，请充值后重试")
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        break  # retryable — next attempt with backoff
+                    resp.raise_for_status()
+                    return resp.json()
+            except RuntimeError:
+                raise
+            except (requests.RequestException, ValueError):
+                continue
     return None
 
 
@@ -118,6 +129,7 @@ def chat_json(
     task: str = "filter",
     cache_key: str | None = None,
     cache_name: str | None = None,
+    timeout: int = 60,
 ) -> dict | None:
     """调用 DeepSeek 返回 JSON dict，支持缓存。"""
     if not deepseek_api_key():
@@ -140,7 +152,7 @@ def chat_json(
         "response_format": {"type": "json_object"},
     }
 
-    result = _post_api("/v1/chat/completions", body)
+    result = _post_api("/v1/chat/completions", body, timeout=timeout)
     if not result:
         return None
 

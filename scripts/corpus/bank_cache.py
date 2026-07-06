@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from scripts.corpus.posts_view import company_options_from_dicts, serialize_posts
+from scripts.corpus.question_bank_view import serialize_question_bank_ui
 from scripts.corpus.quality import filter_question_dicts, is_interview_question
 from scripts.corpus.role_match import annotate_post
 from scripts.corpus.store import load_raw_posts, save_raw_posts
@@ -302,12 +303,14 @@ def load_merged_role_bundle(
     posts = serialize_posts(all_raw, bank_role=bank_role, for_display=True)
     posts = [p for p in posts if not p.get("role_mismatch")]
     posts.sort(key=lambda r: (r.get("posted_at") or "", r.get("title") or ""), reverse=True)
+    question_bank_ui = serialize_question_bank_ui(bank, posts)
 
     return {
         "slug": primary_slug,
         "merged_slugs": [r["slug"] for r in rows],
         "bank": bank,
         "posts": posts,
+        "question_bank_ui": question_bank_ui,
         "companies": company_options_from_dicts(posts),
         "frequency_report": frequency,
         "meta": meta,
@@ -331,10 +334,12 @@ def load_bank_bundle(cache_root: Path, slug: str) -> dict | None:
     raw_posts = [annotate_post(p) for p in raw_posts]
     posts = serialize_posts(raw_posts, bank_role=bank_role, for_display=True)
     posts = [p for p in posts if not p.get("role_mismatch")]
+    question_bank_ui = serialize_question_bank_ui(bank, posts)
     return {
         "slug": slug,
         "bank": bank,
         "posts": posts,
+        "question_bank_ui": question_bank_ui,
         "companies": company_options_from_dicts(posts),
         "frequency_report": load_frequency_report(cache_root, slug),
         "meta": meta,

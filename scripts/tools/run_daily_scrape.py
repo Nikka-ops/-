@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from scripts.config import bootstrap_env, cache_dir, package_root
+from scripts.config import bootstrap_env, cache_dir, focus_role_ids_csv, package_root
 
 LOCK_NAME = ".daily_scrape.lock"
 
@@ -76,8 +76,8 @@ def run_daily_scrape_once() -> int:
         _append_log("skip: another daily scrape is running")
         return 0
 
-    role_id = os.environ.get("INTERVIEWRADAR_DAILY_ROLE_ID", "ai_app")
-    role_ids = os.environ.get("INTERVIEWRADAR_DAILY_ROLE_IDS", "").strip()
+    role_id = os.environ.get("INTERVIEWRADAR_DAILY_ROLE_ID", "").strip()
+    role_ids = os.environ.get("INTERVIEWRADAR_DAILY_ROLE_IDS", focus_role_ids_csv()).strip()
     companies = os.environ.get("INTERVIEWRADAR_DAILY_COMPANIES", "all")
 
     try:
@@ -95,8 +95,10 @@ def run_daily_scrape_once() -> int:
         ]
         if role_ids:
             cmd.extend(["--role-ids", role_ids])
-        else:
+        elif role_id:
             cmd.extend(["--role-id", role_id])
+        else:
+            cmd.extend(["--role-ids", focus_role_ids_csv()])
 
         proc = subprocess.run(
             cmd,

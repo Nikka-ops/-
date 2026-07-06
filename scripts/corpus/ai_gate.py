@@ -69,20 +69,29 @@ def _cache_path(name: str) -> Path:
     return p
 
 
+_CACHE_MEM: dict[str, dict] = {}
+
+
 def load_cache(name: str) -> dict:
+    if name in _CACHE_MEM:
+        return _CACHE_MEM[name]
     path = _cache_path(name)
     if not path.is_file():
-        return {}
+        _CACHE_MEM[name] = {}
+        return _CACHE_MEM[name]
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        _CACHE_MEM[name] = {}
+        return _CACHE_MEM[name]
+    _CACHE_MEM[name] = data if isinstance(data, dict) else {}
+    return _CACHE_MEM[name]
 
 
 def save_cache(name: str, cache: dict) -> None:
     if cache:
         _cache_path(name).write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        _CACHE_MEM[name] = cache
 
 
 def clear_agent_caches() -> list[str]:
