@@ -65,6 +65,7 @@ def filter_ingest_posts(
     use_ai = ai_enabled() if use_ai is None else use_ai
     if use_ai and not deepseek_api_key():
         use_ai = False
+    bank_rid = canonical_role_id(role or "")
     cache = load_cache(_CACHE) if use_ai else {}
     meta: dict = {"ai_enabled": use_ai, "input": len(posts)}
     kept: list[RawPost] = []
@@ -94,6 +95,10 @@ def filter_ingest_posts(
                 kept.append(post)
         elif not verdict.keep or (verdict.role_id and canonical_role_id(verdict.role_id) not in set(focus_role_ids())):
             meta["ai_dropped"] = meta.get("ai_dropped", 0) + 1
+        elif bank_rid and canonical_role_id(verdict.role_id or "") != bank_rid:
+            # AI says another focus role (ai_app post in a data bank) or no target role
+            # at all (role_id=null: bank/hardware/off-role recaps) — keep banks role-pure.
+            meta["role_dropped_ai"] = meta.get("role_dropped_ai", 0) + 1
         else:
             _set_role(post, verdict.role_id)
             if verdict.topics:
@@ -104,7 +109,8 @@ def filter_ingest_posts(
 
     if use_ai and cache:
         save_cache(_CACHE, cache)
-    # When AI ran, role was already validated by judge_post(); skip redundant regex pass.
+    # When AI ran, role purity is enforced above via verdict.role_id; the regex
+    # bank filter is too aggressive on AI-kept posts (drops valid recaps), so skip it.
     if skip_role or use_ai:
         meta["kept"] = len(kept)
         return kept, meta

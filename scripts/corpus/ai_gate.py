@@ -34,7 +34,8 @@ _POST_SYS = (
 )
 _CLUSTER_SYS = (
     "整理数据开发/AI应用面试题库。输入 [{id,text}]。"
-    "合并相似题为 groups(canonical,topic,ids)；"
+    "合并相似题为 groups(canonical,topic,ids)；canonical 必须是一道具体的题目问句，"
+    "禁止用类别名（如'后端八股'/'项目深挖'）概括；仅合并考察点相同的题，不同题不得并组；"
     "drop：自我介绍/薪资/反问/寒暄/废话/感慨吐槽/求职经验叙述/非问句段落，"
     "以及明显属于后端Java/Go/C++系统编程的题目（如shared_ptr/JVM/Spring/线程池/HTTP框架等纯后端题）。"
     "topic 从[Spark/计算,Hive/SQL,数仓建模,Flink/实时,数据工程,RAG,Agent,MCP/协议,LLM基础,手撕代码,项目深挖,后端八股,产品/业务,综合]选。"
@@ -44,6 +45,11 @@ _ANSWER_SYS = (
     "写数据开发/Agent 面试题简明参考答案，要点式 120～280 字。"
     '输入 {"role":str,"items":[{"id":str,"text":str,"topic":str}]}→{"answers":[{"id":str,"answer":str}]}'
 )
+_TOPIC_LABELS = {
+    "Spark/计算", "Hive/SQL", "数仓建模", "Flink/实时", "数据工程", "RAG", "Agent",
+    "MCP/协议", "LLM基础", "手撕代码", "项目深挖", "后端八股", "产品/业务", "综合",
+    "AI应用与集成", "数据库与缓存", "系统设计", "设计题",
+}
 _OFFLINE_POST = re.compile(r"面经|凉经|[一二三四五]面|面试题|手撕|笔试|面试官|问了|被问|拷打", re.I)
 
 
@@ -185,6 +191,10 @@ def _merge_batch(batch: list[tuple[int, Question]]) -> list[Question]:
         if not ids:
             continue
         canon = str(grp.get("canonical") or by_id[ids[0]].text).strip() or by_id[ids[0]].text
+        # Guard against over-merge: a canonical that is just a category label
+        # ("后端八股", "项目深挖") is not a question — use the longest member text.
+        if len(canon) < 10 or canon in _TOPIC_LABELS:
+            canon = max((by_id[i].text for i in ids), key=len)
         topic = str(grp.get("topic") or by_id[ids[0]].topic or "综合").strip() or "综合"
         merged = Question(text=canon, topic=topic, modality_origin=by_id[ids[0]].modality_origin, variants=[], freq=0)
         for idx in ids:
