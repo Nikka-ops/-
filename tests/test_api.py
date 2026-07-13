@@ -285,6 +285,7 @@ def test_run_role_only_from_raw_posts(tmp_path: Path, monkeypatch):
             url="https://www.nowcoder.com/discuss/1",
             post_type="text",
             raw_text=(
+                "面经复盘：一面被拷打。\n"
                 "1. MCP 和 Function Calling 有什么区别？\n"
                 "2. RAG 文档切块策略有哪些？\n"
             ),
