@@ -94,7 +94,7 @@ def test_list_and_get_bank_api(tmp_path: Path, monkeypatch):
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/3",
             post_type="text",
-            raw_text="1. Agent 记忆模块？",
+            raw_text="面经复盘：一面被拷打。1. Agent 记忆模块？",
             posted_at="2026-05-01",
         )
     ]
@@ -142,7 +142,7 @@ def test_handle_predict_api(tmp_path: Path, monkeypatch):
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/2",
             post_type="text",
-            raw_text="1. 介绍你的 RAG 项目？",
+            raw_text="面经复盘：一面被拷打。1. 介绍你的 RAG 项目？",
             posted_at="2026-05-01",
         )
     ]
@@ -244,7 +244,7 @@ def test_predict_with_resume_base64(tmp_path, monkeypatch):
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/9",
             post_type="text",
-            raw_text="1. 介绍 RAG 项目架构？",
+            raw_text="面经复盘：一面被拷打。1. 介绍 RAG 项目架构？",
             posted_at="2026-05-01",
         )
     ]
@@ -325,7 +325,7 @@ def test_run_with_resume_agent_handoff(tmp_path: Path, monkeypatch):
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/2",
             post_type="text",
-            raw_text="1. 介绍一下你的 RAG 项目架构？",
+            raw_text="面经复盘：一面被拷打。1. 介绍一下你的 RAG 项目架构？",
             posted_at="2026-05-01",
             company="字节跳动",
             role="AI 应用开发",
@@ -363,7 +363,7 @@ def test_run_heuristic_prep_package(tmp_path: Path, monkeypatch):
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/2",
             post_type="text",
-            raw_text="1. 介绍一下你的 RAG 项目架构？",
+            raw_text="面经复盘：一面被拷打。1. 介绍一下你的 RAG 项目架构？",
             posted_at="2026-05-01",
         )
     ]
@@ -399,7 +399,7 @@ def test_run_bank_only_skips_handoff(tmp_path: Path, monkeypatch):
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/4",
             post_type="text",
-            raw_text="1. 介绍 RAG 架构？",
+            raw_text="面经复盘：一面被拷打。1. 介绍 RAG 架构？",
             posted_at="2026-05-01",
         )
     ]

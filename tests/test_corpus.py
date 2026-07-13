@@ -1522,10 +1522,15 @@ def test_custom_company_aliases_yaml(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("COMPANY_ALIASES_PATH", str(yaml_path))
     reload_company_aliases_cache()
-
-    assert normalize_company_name("示例子公司") == "示例集团"
-    assert normalize_company_name("badtag") is None
-    assert normalize_company_name("淘天") == "阿里巴巴"
+    try:
+        assert normalize_company_name("示例子公司") == "示例集团"
+        assert normalize_company_name("badtag") is None
+        assert normalize_company_name("淘天") == "阿里巴巴"
+    finally:
+        # Undo the env override before rebuilding the cache, or the custom
+        # yaml poisons every alias test that runs after this one.
+        monkeypatch.delenv("COMPANY_ALIASES_PATH", raising=False)
+        reload_company_aliases_cache()
 
 
 def test_parse_role_ids_dedupes_and_aliases():

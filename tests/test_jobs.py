@@ -453,7 +453,8 @@ def test_boss_cdp_connector_with_mock_evaluator(monkeypatch):
     assert len(result.jobs) == 1
     assert result.jobs[0].source == "boss_cdp"
     assert result.jobs[0].title == "AI 应用开发"
-    assert not result.jobs[0].description
+    # The connector enriches jobs with the detail-page JD text.
+    assert "RAG" in result.jobs[0].description
 
 
 def test_parse_boss_joblist_still_works():

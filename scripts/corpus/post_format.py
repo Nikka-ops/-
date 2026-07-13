@@ -78,8 +78,9 @@ def split_body_lines(text: str) -> list[str]:
             lines.append("")
             continue
         # Split "1. foo 2. bar" into separate lines, but only when there's
-        # non-digit content before the next number (avoids "10." → "1" + "0. …").
-        parts = re.split(r"(?<=[^\d])\s+(?=\d+[\.\、\)）]\s)", line)
+        # non-digit content before the next number (avoids "10." → "1" + "0. …")
+        # and the marker isn't a decimal like "3.5" (punct must not precede a digit).
+        parts = re.split(r"(?<=[^\d])\s+(?=\d+[\.\、\)）](?!\d))", line)
         for part in parts:
             p = part.strip()
             if p:

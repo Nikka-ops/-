@@ -69,7 +69,9 @@ def posts_from_notes(notes: list[dict], *, window_days: int | None = None) -> li
 
 
 def parse_mediacrawler_export(json_text: str) -> list[RawPost]:
-    return _posts_from_notes(json.loads(json_text))
+    # No date filter here: the pipeline applies recency later, and callers
+    # expect every note in the export to be parsed.
+    return _posts_from_notes(json.loads(json_text), window_days=0)
 
 
 def _coerce_tags(value) -> list[str]:

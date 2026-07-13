@@ -27,7 +27,7 @@ _DATA_STRONG = frozenset({
 _AI_APP_STRONG = frozenset({
     # 核心岗位名
     "agent开发", "ai应用开发", "ai应用工程师", "智能体开发",
-    "大模型应用", "llm应用", "ai产品工程师",
+    "大模型应用", "llm应用", "ai产品工程师", "ai工程师", "ai 工程师",
     # 技术框架
     "agent", "智能体", "rag", "langchain", "llamaindex",
     "langGraph", "autogen", "mcp", "tool use", "工具调用",
@@ -67,11 +67,12 @@ def job_matches_focus_roles(job: JobPosting, role_ids: list[str] | None = None) 
     if len(ids) == 1:
         rid = ids[0]
         strong = _DATA_STRONG if rid == "data" else _AI_APP_STRONG if rid == "ai_app" else _keywords_for_roles(ids)
-        # 有描述时在全 blob 匹配；无描述时只看标题（更宽松：含"数据"且无明显排除词即算入）
+        # 有描述时在全 blob 匹配；无描述时看标题+技能标签（更宽松：含"数据"且无明显排除词即算入）
         if desc:
             return any(kw in blob for kw in strong)
         else:
-            if any(kw in title for kw in strong):
+            title_tags = f"{title} {tags.lower()}".strip()
+            if any(kw in title_tags for kw in strong):
                 return True
             # 无描述兜底：标题含"数据"且不是明显的非数据开发岗
             if rid == "data" and "数据" in title:
