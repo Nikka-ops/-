@@ -1673,7 +1673,13 @@ async function autoLoadBank() {
     setLoading(false);
     if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = currentBank ? "" : "暂无面经库 — 点击「构建面经库」开始";
     updateMockBankStatus();
-    renderCurrentView();
+    // Deep-link: #bank / #jobs / #mock jump straight to that view.
+    const hashView = (location.hash || "").replace("#", "");
+    if (["posts", "bank", "jobs", "mock"].includes(hashView) && hashView !== viewMode) {
+      setViewMode(hashView);
+    } else {
+      renderCurrentView();
+    }
   }
 }
 
