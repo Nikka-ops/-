@@ -98,11 +98,14 @@ def matches_target_role(post: RawPost, target_role: str) -> bool:
     if not tgt:
         return True
     tid = canonical_role_id(tgt.id)
+    # Curated wrong-role sets for focus roles; for other targets any different
+    # strongly-hinted role counts as wrong.
+    wrong = _WRONG.get(tid) or {hint_id for _, hint_id in _HINTS if hint_id != tid}
 
     # Check title for obvious wrong role
     head = _head(post)
     th = infer_preset_from_text(head)
-    if th and tid in _FOCUS and th.id in _WRONG.get(tid, set()):
+    if th and th.id in wrong:
         return False
     if th and th.id == tgt.id:
         return True
@@ -110,24 +113,23 @@ def matches_target_role(post: RawPost, target_role: str) -> bool:
     # Check explicit role field
     if post.role:
         pr = infer_preset_from_text(str(post.role))
-        if pr and tid in _FOCUS and pr.id in _WRONG.get(tid, set()):
+        if pr and pr.id in wrong:
             return False
         if pr and canonical_role_id(pr.id) == tid:
             return True
 
-    # Body keyword scan for focus roles
+    # Body keyword scan for focus roles: require a positive signal — an
+    # ambiguous recap with no role hints must not pollute a role bank.
     if tid in _FOCUS:
         body = _body_text(post)
-        # Data role keywords
-        if tid == "data" and re.search(r"数据开发|数仓|数开|ETL|Spark|Hive|Flink|大数据|数据研发", body, re.I):
-            return True
-        # AI app role keywords
-        if tid == "ai_app" and re.search(r"Agent|RAG|MCP|LangChain|智能体", body, re.I):
-            return True
+        if tid == "data":
+            return bool(re.search(r"数据开发|数仓|数开|ETL|Spark|Hive|Flink|大数据|数据研发", body, re.I))
+        if tid == "ai_app":
+            return bool(re.search(r"Agent|RAG|MCP|LangChain|智能体|大模型应用|LLM", body, re.I))
 
     # Default: trust scrape query pre-filtering
     inf = infer_preset_from_post(post)
-    if inf and tid in _FOCUS and inf.id in _WRONG.get(tid, set()):
+    if inf and inf.id in wrong:
         return False
     return True
 

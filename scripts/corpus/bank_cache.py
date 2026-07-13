@@ -361,7 +361,13 @@ def save_bank_artifacts(
 ) -> None:
     d = bank_dir(cache_root, slug)
     d.mkdir(parents=True, exist_ok=True)
-    save_raw_posts(posts, raw_posts_path(cache_root, slug))
+    rp = raw_posts_path(cache_root, slug)
+    # Never shrink the raw post cache: a rebuild filters the cached posts, and
+    # writing the filtered subset back would destroy source data (filters are
+    # re-applied at read time anyway). Only write when we have at least as many.
+    existing = load_raw_posts(rp) if rp.is_file() else []
+    if len(posts) >= len(existing):
+        save_raw_posts(posts, rp)
     from scripts.corpus.store import save_questions
 
     save_questions(ranked, questions_path(cache_root, slug))

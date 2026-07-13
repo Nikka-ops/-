@@ -13,7 +13,8 @@ _OFFLINE_DROP = re.compile(
 _NARRATIVE_DROP = re.compile(
     r"(?:面经|行情|岗位|招聘|offer|内推|实习|秋招|春招).{0,20}(?:分享|推荐|总结|经验|建议|吐槽|感受|感想)|"
     r"(?:最近|目前|现在|今年).{0,20}(?:行情|hc|市场|竞争|内卷)|"
-    r"(?:希望|祝|感谢|谢谢|加油|冲冲冲)",
+    r"(?:希望|祝|感谢|谢谢|加油|冲冲冲)|"
+    r"^(?:建议|感觉|感想|吐槽|总之|反正)|攒人品|光顾着|凉经",
     re.I,
 )
 # Verbs/patterns that signal an interview question even without "?"

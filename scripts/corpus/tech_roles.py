@@ -72,11 +72,22 @@ TECH_ROLES: tuple[TechRole, ...] = (
 DEFAULT_ROLE_ID = "data"
 
 
+def _label_to_id() -> dict[str, str]:
+    out: dict[str, str] = {}
+    for r in TECH_ROLES:
+        out[r.label] = r.id
+        out[r.search_as] = r.id
+    return out
+
+
 def canonical_role_id(role_id: str | None) -> str:
     rid = (role_id or "").strip()
     if not rid:
         return ""
-    return ROLE_ID_ALIASES.get(rid, rid)
+    rid = ROLE_ID_ALIASES.get(rid, rid)
+    # Chinese labels ("数据开发") must resolve to their role id ("data") so
+    # comparisons against AI-returned ids work.
+    return _label_to_id().get(rid, rid)
 
 
 def equivalent_role_ids(role_id: str | None) -> list[str]:
