@@ -26,6 +26,26 @@ InterviewRadar 自动帮你：
 
 ---
 
+## 界面预览
+
+### 面经流 — 近 90 天真实面经，按公司 / 来源筛选
+
+![面经流](docs/screenshots/home.png)
+
+### 高频题库 — 频次排序 + 考察方向分类 + 语义搜索
+
+![高频题库](docs/screenshots/bank.png)
+
+### 在招岗位 — 大厂实时 JD + 技术栈需求分析
+
+![在招岗位](docs/screenshots/jobs.png)
+
+### 模拟面试 — 填技术背景，AI 面试官从题库选题并结合项目经验追问
+
+![模拟面试](docs/screenshots/mock.png)
+
+---
+
 ## 快速开始
 
 ### 1. 克隆 & 安装
@@ -62,10 +82,12 @@ XHS_WEB_SESSION=<从浏览器 DevTools 复制 web_session 值>
 ```bash
 bash start-web.sh
 # 或
-.venv/bin/python -m scripts.api.server --port 8099
+.venv/bin/python -m scripts.api.server --port 8765
+# Windows：
+.venv\Scripts\python.exe -m scripts.api.server --port 8765
 ```
 
-浏览器打开 [http://localhost:8099](http://localhost:8099)
+浏览器打开 [http://localhost:8765](http://localhost:8765)（支持 `#bank` / `#jobs` / `#mock` 直达对应视图）
 
 ---
 
@@ -81,7 +103,20 @@ bash start-web.sh
 
 - 按**频次**降序排列，高频 ≥3 次 / 中频 2 次 / 低频 1 次
 - 按考察方向分类（Spark、Hive/SQL、数仓建模、Flink、RAG、Agent、MCP 等）
-- 点击题目展开 AI 生成的参考解答
+- **题目详情抽屉**：点击题目查看 AI 生成的参考答案、考察点、深挖方向、常见误区
+- **掌握度标记**：不会 / 模糊 / 掌握，本地持久化
+- **语义搜索**：输入自然语言（如「Spark shuffle 原理」）检索相关题目
+
+### 模拟面试（Mock 视图）
+
+- 填写技术背景 / 简历摘要，AI 面试官从题库挑选**最匹配的题目**
+- 结合你的项目经验实时追问、逐题点评
+- 面试结束生成整体评价
+
+### 复习弱项
+
+- 从掌握度标记中筛出「不会 / 模糊」的题，卡片式复习
+- 翻面查看 AI 参考答案，重新标记掌握度
 
 ### 在招岗位（Jobs 视图）
 
@@ -230,9 +265,9 @@ XHS_WEB_SESSION=<从浏览器 DevTools Application → Cookies 复制>
 
 - **Vision 补读自动化**：OCR 失败图片自动调多模态模型，解锁小红书图片面经
 - **Prep Agent 内化**：服务端自动执行备考包生成，产品端到端闭环
-- **本地语料 RAG**：embedding 向量检索，支持「和我简历相关的题」等语义查询
 - **考点趋势分析**：按周/月聚类，识别升温考点，让「雷达」名副其实
-- **模拟面试 Agent**：对话式技术面/项目深挖/手撕代码
+
+已落地：模拟面试 Agent（个性化选题 + 追问）、题目 AI 参考答案、复习弱项、RAG 语义搜索。
 
 ---
 
