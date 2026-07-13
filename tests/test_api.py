@@ -24,12 +24,14 @@ def test_handle_bank_missing_role():
 
 
 def test_run_pipeline_with_raw_posts(tmp_path: Path, monkeypatch):
+    # Force offline filtering: deterministic, no network in CI or locally.
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     posts = [
         RawPost(
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/1",
             post_type="text",
-            raw_text="1. RAG 召回怎么优化？",
+            raw_text="AI应用开发面经：一面被拷打。1. RAG 召回怎么优化？",
             posted_at="2026-05-01",
             company="字节跳动",
             role="AI 应用开发",
@@ -52,12 +54,13 @@ def test_run_pipeline_with_raw_posts(tmp_path: Path, monkeypatch):
 
 
 def test_handle_bank_no_handoff(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     posts = [
         RawPost(
             source="nowcoder",
             url="https://www.nowcoder.com/discuss/1",
             post_type="text",
-            raw_text="1. RAG 召回怎么优化？",
+            raw_text="AI应用开发面经：一面被拷打。1. RAG 召回怎么优化？",
             posted_at="2026-05-01",
         )
     ]
