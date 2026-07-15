@@ -545,13 +545,19 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
     if route == "/api/trends":
         data = dict(body or {})
         slug = str(data.get("slug") or "").strip()
-        if not slug:
+        rid = canonical_role_id(str(data.get("role_id") or "").strip())
+        bundle: dict = {}
+        if slug:
+            bundle = load_bank_bundle(banks_dir(), slug) or {}
+        elif rid and (preset := get_tech_role(rid)) is not None:
+            bundle = load_merged_role_bundle(banks_dir(), preset.search_as, role_id=rid) or {}
+        else:
             all_banks = list_banks(banks_dir())
-            slug = all_banks[0]["slug"] if all_banks else ""
-        if not slug:
-            return 404, {"error": "no bank found"}
-        bundle = load_bank_bundle(banks_dir(), slug) or {}
+            if all_banks:
+                bundle = load_bank_bundle(banks_dir(), all_banks[0]["slug"]) or {}
         posts = bundle.get("posts") or []
+        if not posts:
+            return 404, {"error": "no bank found"}
         from scripts.corpus.trends import compute_trends, ai_trend_broadcast
         trend = compute_trends(posts)
         # AI 叙述（可选，失败不阻断）

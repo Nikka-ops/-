@@ -7,6 +7,8 @@ import sys
 from datetime import date, timedelta
 from unittest.mock import patch
 
+import pytest
+
 from scripts.corpus.company_catalog import all_preset_companies, resolve_company_list
 from scripts.scrape.schedule_info import daily_schedule_status, run_daily_entrypoint
 from scripts.tools.full_scrape import _stage_counts
@@ -636,6 +638,7 @@ def test_needs_full_fetch_on_ellipsis():
     assert not needs_full_fetch("1. aaa\n2. bbb\n3. ccc")
 
 
+@pytest.mark.live
 def test_fetch_nowcoder_moment_full_live():
     text = fetch_nowcoder_moment_full("f65b692f76244441a53cecb6f435fcc6", use_cache=True)
     if not (text or "").strip():
@@ -692,6 +695,7 @@ def test_iter_search_payloads_skips_list_data():
     assert _iter_search_payloads({"data": None}) == []
 
 
+@pytest.mark.live
 def test_search_nowcoder_moments_live():
     posts, meta = search_nowcoder_moments(["算法工程师面经"], max_per_query=2, request_delay=0)
     assert meta["count"] == len(posts)

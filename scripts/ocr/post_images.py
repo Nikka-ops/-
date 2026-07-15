@@ -182,6 +182,14 @@ def enrich_post_with_image_ocr(
     key = _cache_key(post)
     pages = ocr_image_paths(key, paths, ocr_root=ocr_root)
     merged = PageMerger().merge([p.text for p in pages])
+    vision_used = False
+    if not merged.strip() or any(p.needs_vision for p in pages):
+        # OCR failed or is low-confidence — try a vision-language model
+        # (requires VISION_API_KEY; returns "" when not configured).
+        vl_text = _vision_read_pages(paths)
+        if vl_text.strip():
+            merged = vl_text
+            vision_used = True
     if not merged.strip():
         post.needs_vision_fallback = True
         post.extraction_quality = post.extraction_quality or "text_only"
@@ -197,9 +205,26 @@ def enrich_post_with_image_ocr(
     post.content_text = post.raw_text
     post.post_type = "image" if len(primary) < min_body_chars else "mixed"
     post.asset_paths = [str(p) for p in paths]
-    post.needs_vision_fallback = any(p.needs_vision for p in pages)
-    post.extraction_quality = "ocr_low_quality" if post.needs_vision_fallback else "ocr_ok"
+    post.needs_vision_fallback = (not vision_used) and any(p.needs_vision for p in pages)
+    if vision_used:
+        post.extraction_quality = "vision_ok"
+    else:
+        post.extraction_quality = "ocr_low_quality" if post.needs_vision_fallback else "ocr_ok"
     return post
+
+
+def _vision_read_pages(paths: list[Path]) -> str:
+    """Read image pages with a vision-language model; "" when unavailable."""
+    from scripts.ai.gateway import vision_enabled, vision_extract
+
+    if not vision_enabled():
+        return ""
+    texts: list[str] = []
+    for p in paths:
+        data = vision_extract(p)
+        if data and str(data.get("raw_text") or "").strip():
+            texts.append(str(data["raw_text"]).strip())
+    return PageMerger().merge(texts) if texts else ""
 
 
 def enrich_posts_image_ocr(
