@@ -193,6 +193,11 @@ _VISION_SYS = (
 )
 
 
+def vision_enabled() -> bool:
+    from scripts.config import vision_api_key
+    return bool(vision_api_key())
+
+
 def vision_extract(
     image_path: str | Path,
     *,
@@ -202,10 +207,15 @@ def vision_extract(
     """
     调用多模态模型从图片中提取面经结构化信息。
 
+    需配置 VISION_API_KEY（OpenAI 兼容端点，如通义 Qwen-VL / GLM-4V）；
+    DeepSeek 无视觉端点，未配置时返回 None（调用方保持 OCR 结果）。
+
     返回:
         {questions, company, round, extraction_confidence, raw_text}
     """
-    if not deepseek_api_key():
+    from scripts.config import vision_api_base, vision_api_key, vision_model
+
+    if not vision_api_key():
         return None
 
     image_path = Path(image_path)
@@ -237,26 +247,25 @@ def vision_extract(
         },
     ]
 
-    # 优先用 deepseek-vl2 或 deepseek-vl；回退 deepseek-chat（文字模式）
-    vl_models = ["deepseek-vl2", "deepseek-vl", deepseek_model()]
+    body = {
+        "model": vision_model(),
+        "messages": [
+            {"role": "system", "content": _VISION_SYS},
+            {"role": "user", "content": user_content},
+        ],
+        "temperature": 0,
+        "max_tokens": 1024,
+    }
+    url = f"{vision_api_base()}/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {vision_api_key()}", "Content-Type": "application/json"}
     result = None
-    for vl_model in vl_models:
-        body = {
-            "model": vl_model,
-            "messages": [
-                {"role": "system", "content": _VISION_SYS},
-                {"role": "user", "content": user_content},
-            ],
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "max_tokens": 1024,
-        }
-        r = _post_api("/v1/chat/completions", body, timeout=60)
-        if r and r.get("choices"):
-            result = r
-            break
-
-    if not result:
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=90)
+        resp.raise_for_status()
+        result = resp.json()
+    except (requests.RequestException, ValueError):
+        return None
+    if not result or not result.get("choices"):
         return None
 
     _STATS["calls"] += 1

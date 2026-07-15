@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from scripts.corpus.ai_gate import ai_enabled, cluster_questions, enrich_answers
+from scripts.corpus.ai_gate import ai_enabled, audit_questions_role, cluster_questions, enrich_answers
 from scripts.corpus.dedupe_rank import dedupe_and_rank
 from scripts.corpus.extract_questions import extract_questions
 from scripts.corpus.quality import filter_by_companies, filter_questions
@@ -27,6 +27,9 @@ def build_ranked_questions(
     ranked = filter_questions(ranked)
     if semantic_merge:
         ranked = cluster_questions(ranked, offline_threshold=merge_threshold, today=ref)
+    # Purity audit: clustering judges per-post, but off-role questions from
+    # borderline posts (Qt/hardware/client) still leak through — re-check per question.
+    ranked = audit_questions_role(ranked, role)
     if companies_filter:
         ranked = filter_by_companies(ranked, companies_filter)
     return enrich_answers(ranked, role, top_n=answer_top_n)

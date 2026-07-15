@@ -4,7 +4,9 @@
       "Bash(.venv/Scripts/python.exe -m scripts.api.server --port 8765)",
       "Bash(curl -s http://127.0.0.1:8765/health)",
       "PowerShell(Invoke-WebRequest -Uri \"http://127.0.0.1:8765/health\" -UseBasicParsing -TimeoutSec 5 2>&1)",
-      "Bash(cd /E/data-agent-radar && find . -type f -name \"*.py\" | grep -E \"\\(spider|ocr|image\\)\" | head -20)"
+      "Bash(cd /E/data-agent-radar && find . -type f -name \"*.py\" | grep -E \"\\(spider|ocr|image\\)\" | head -20)",
+      "PowerShell($env:PYTHONIOENCODING='utf-8'; Set-Location E:\\\\data-agent-radar; Rename-Item .env .env.bak; try { .venv\\\\Scripts\\\\python.exe -m pytest tests/test_corpus.py tests/test_connectors.py tests/test_jobs.py tests/test_scrape.py --tb=line -q 2>&1 | Select-Object -Last 12 } finally { Rename-Item .env.bak .env })",
+      "PowerShell($env:PYTHONIOENCODING='utf-8'; Set-Location E:\\\\data-agent-radar; Rename-Item .env .env.bak; try { .venv\\\\Scripts\\\\python.exe -m pytest tests/test_api.py --tb=line -q 2>&1 | Select-Object -Last 12 } finally { Rename-Item .env.bak .env })"
     ]
   }
 }

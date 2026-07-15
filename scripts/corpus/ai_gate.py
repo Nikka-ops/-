@@ -259,6 +259,39 @@ def cluster_questions(
     return current
 
 
+_AUDIT_SYS = (
+    "审核面试题库纯度。目标岗位：{role}。输入 [{{id,text}}]。"
+    "判断每道题是否属于该岗位面试会考的内容（通用基础也算：SQL/数据库/操作系统/网络/Python 属于数据开发常考；"
+    "LLM/RAG/Agent 属于 Agent 开发常考）。"
+    "明显属于其他岗位的题（如 Qt/前端框架/硬件寄存器/ARM 汇编/iOS/Android 客户端）输出到 drop。"
+    '拿不准的保留。JSON:{{"drop":["id",...]}}'
+)
+
+
+def audit_questions_role(questions: list[Question], role: str, *, batch_size: int = 40) -> list[Question]:
+    """Post-cluster purity pass: drop questions that clearly belong to another role."""
+    if not ai_enabled() or len(questions) < 5:
+        return questions
+    sys_prompt = _AUDIT_SYS.format(role=role or "数据开发")
+    keep: list[Question] = []
+    dropped = 0
+    for start in range(0, len(questions), batch_size):
+        chunk = questions[start : start + batch_size]
+        payload = json.dumps([{"id": str(i), "text": q.text[:160]} for i, q in enumerate(chunk)], ensure_ascii=False)
+        data = chat_json(sys_prompt, payload)
+        drop_ids: set[int] = set()
+        if isinstance(data, dict):
+            drop_ids = {int(x) for x in (data.get("drop") or []) if str(x).isdigit()}
+        for i, q in enumerate(chunk):
+            if i in drop_ids:
+                dropped += 1
+            else:
+                keep.append(q)
+    if dropped:
+        print(f"[ai_gate] role audit dropped {dropped}/{len(questions)} off-role questions", file=sys.stderr)
+    return keep
+
+
 def enrich_answers(questions: list[Question], role: str, *, top_n: int = 40, batch_size: int = 12) -> list[Question]:
     if not ai_enabled() or not questions:
         return questions

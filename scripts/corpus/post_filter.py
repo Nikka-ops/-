@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-import time
+from concurrent.futures import ThreadPoolExecutor
 
 from scripts.config import deepseek_api_key, focus_role_ids
 from scripts.corpus.ai_gate import ai_enabled, cached_post_keep, judge_post, load_cache, offline_post_keep, save_cache
@@ -13,6 +13,7 @@ from scripts.models import RawPost
 
 _CACHE = "post_ai_filter_cache.json"
 _FLUSH = 40
+_AI_WORKERS = 8  # concurrent DeepSeek judge calls; serial was ~1.7s/post
 
 
 def _has_images(post: RawPost) -> bool:
@@ -69,43 +70,52 @@ def filter_ingest_posts(
     cache = load_cache(_CACHE) if use_ai else {}
     meta: dict = {"ai_enabled": use_ai, "input": len(posts)}
     kept: list[RawPost] = []
+    focus = set(focus_role_ids())
 
-    for i, post in enumerate(posts):
+    candidates: list[RawPost] = []
+    for post in posts:
         combined = post_combined_text(post)
         if not combined and not _has_images(post):
             meta["junk_dropped"] = meta.get("junk_dropped", 0) + 1
             continue
         if not use_ai:
-            key = "offline_dropped"
             if _offline_keep(post):
                 kept.append(post)
-                continue
-            meta[key] = meta.get(key, 0) + 1
+            else:
+                meta["offline_dropped"] = meta.get("offline_dropped", 0) + 1
             continue
+        candidates.append(post)
 
-        if i:
-            time.sleep(0.12)
-        snip = re.sub(r"\s+", " ", strip_ocr_page_markers(combined))[:900]
-        verdict = judge_post(snip, url=post.url or "", cache=cache)
-        if verdict is None:
-            meta["ai_errors"] = meta.get("ai_errors", 0) + 1
-            fb = "ai_fallback_kept" if _offline_keep(post) else "ai_fallback_dropped"
-            meta[fb] = meta.get(fb, 0) + 1
-            if fb.endswith("kept"):
-                kept.append(post)
-        elif not verdict.keep or (verdict.role_id and canonical_role_id(verdict.role_id) not in set(focus_role_ids())):
-            meta["ai_dropped"] = meta.get("ai_dropped", 0) + 1
-        elif bank_rid and canonical_role_id(verdict.role_id or "") != bank_rid:
-            # AI says another focus role (ai_app post in a data bank) or no target role
-            # at all (role_id=null: bank/hardware/off-role recaps) — keep banks role-pure.
-            meta["role_dropped_ai"] = meta.get("role_dropped_ai", 0) + 1
-        else:
-            _set_role(post, verdict.role_id)
-            if verdict.topics:
-                post.ai_topics = verdict.topics
-            kept.append(post)
-        if cache and i % _FLUSH == _FLUSH - 1:
-            save_cache(_CACHE, cache)
+    if use_ai and candidates:
+        # cache is a plain dict shared across workers: judge_post only does
+        # single-key reads/writes, which are atomic under the GIL.
+        def _judge(post: RawPost):
+            snip = re.sub(r"\s+", " ", strip_ocr_page_markers(post_combined_text(post)))[:900]
+            return post, judge_post(snip, url=post.url or "", cache=cache)
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=_AI_WORKERS) as pool:
+            for post, verdict in pool.map(_judge, candidates):
+                done += 1
+                if verdict is None:
+                    meta["ai_errors"] = meta.get("ai_errors", 0) + 1
+                    fb = "ai_fallback_kept" if _offline_keep(post) else "ai_fallback_dropped"
+                    meta[fb] = meta.get(fb, 0) + 1
+                    if fb.endswith("kept"):
+                        kept.append(post)
+                elif not verdict.keep or (verdict.role_id and canonical_role_id(verdict.role_id) not in focus):
+                    meta["ai_dropped"] = meta.get("ai_dropped", 0) + 1
+                elif bank_rid and canonical_role_id(verdict.role_id or "") != bank_rid:
+                    # AI says another focus role (ai_app post in a data bank) or no target role
+                    # at all (role_id=null: bank/hardware/off-role recaps) — keep banks role-pure.
+                    meta["role_dropped_ai"] = meta.get("role_dropped_ai", 0) + 1
+                else:
+                    _set_role(post, verdict.role_id)
+                    if verdict.topics:
+                        post.ai_topics = verdict.topics
+                    kept.append(post)
+                if cache and done % _FLUSH == 0:
+                    save_cache(_CACHE, cache)
 
     if use_ai and cache:
         save_cache(_CACHE, cache)

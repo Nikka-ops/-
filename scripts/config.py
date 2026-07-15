@@ -365,6 +365,19 @@ def deepseek_model() -> str:
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
 
 
+def vision_api_key() -> str:
+    """OpenAI-compatible vision-language provider key (Qwen-VL / GLM-4V / …)."""
+    return os.environ.get("VISION_API_KEY", "").strip()
+
+
+def vision_api_base() -> str:
+    return os.environ.get("VISION_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode").strip().rstrip("/")
+
+
+def vision_model() -> str:
+    return os.environ.get("VISION_MODEL", "qwen-vl-plus").strip() or "qwen-vl-plus"
+
+
 def deepseek_use_proxy() -> bool:
     """默认直连 DeepSeek；仅 DEEPSEEK_USE_PROXY=1 时使用系统 HTTP_PROXY。"""
     raw = os.environ.get("DEEPSEEK_USE_PROXY", "").strip().lower()

@@ -19,9 +19,15 @@ from datetime import datetime, timedelta
 def _parse_date(s: str) -> datetime | None:
     if not s:
         return None
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S"):
+    s = str(s).strip()
+    for fmt, width in (
+        ("%Y-%m-%dT%H:%M:%S", 19),
+        ("%Y-%m-%d %H:%M:%S", 19),
+        ("%Y-%m-%d", 10),
+        ("%Y/%m/%d", 10),
+    ):
         try:
-            return datetime.strptime(s[:len(fmt)], fmt)
+            return datetime.strptime(s[:width], fmt)
         except ValueError:
             continue
     return None
@@ -61,11 +67,14 @@ def compute_trends(
         dt = _parse_date(post.get("posted_at") or "")
         if dt is None:
             continue
-        topic = post.get("topic") or post.get("role_label") or "综合"
-        if dt >= recent_cutoff:
-            recent_topic[topic] += 1
-        elif dt >= baseline_cutoff:
-            baseline_topic[topic] += 1
+        # ai_topics is the DeepSeek-judged exam-topic list for the post;
+        # a post covering N topics counts once per topic.
+        topics = [t for t in (post.get("ai_topics") or []) if t] or [post.get("topic") or "综合"]
+        for topic in topics:
+            if dt >= recent_cutoff:
+                recent_topic[topic] += 1
+            elif dt >= baseline_cutoff:
+                baseline_topic[topic] += 1
 
     all_topics = set(recent_topic) | set(baseline_topic)
     rows = []
