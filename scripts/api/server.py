@@ -399,6 +399,8 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
                         loaded.add(s["slug"])
                     break
         result = analyse_tech_stack(all_jobs)
+        from scripts.jobs.salary import analyse_salaries
+        result["salary"] = analyse_salaries(all_jobs)
         return 200, result
 
     if method == "GET" and route == "/api/jobs":
