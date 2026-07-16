@@ -2203,6 +2203,34 @@ function _resetMockToSetup() {
 
 // Wire up mock buttons
 $("startMockBtn")?.addEventListener("click", _startMockSession);
+
+async function _importMockResume(file) {
+  const status = $("mockResumeStatus");
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) { if (status) status.textContent = "文件过大（上限 8MB）"; return; }
+  if (status) status.textContent = `读取「${file.name}」…`;
+  try {
+    const b64 = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1] || "");
+      r.onerror = () => reject(new Error("读取失败"));
+      r.readAsDataURL(file);
+    });
+    const data = await postJson("/api/resume/extract", { resume_base64: b64, resume_filename: file.name });
+    if (data.error) throw new Error(data.message || data.error);
+    if (!data.text) { if (status) status.textContent = data.message || "未提取到文字，请手动填写"; return; }
+    const box = $("mockBackground");
+    if (box) box.value = data.text;
+    if (status) status.textContent = `已导入 ${data.chars} 字，可编辑后开始面试`;
+  } catch (e) {
+    if (status) status.textContent = "导入失败：" + (e.message || e);
+  }
+}
+$("mockResumeFile")?.addEventListener("change", (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) _importMockResume(f);
+  e.target.value = "";
+});
 $("mockSubmitBtn")?.addEventListener("click", () => _submitMockAnswer(false));
 $("mockSkipBtn")?.addEventListener("click",   () => _submitMockAnswer(true));
 $("mockQuitBtn")?.addEventListener("click",   _resetMockToSetup);

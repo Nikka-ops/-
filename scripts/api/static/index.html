@@ -273,8 +273,13 @@
           <h2>模拟面试</h2>
           <p class="mock-setup-desc">填写技术背景，AI 面试官从题库挑选最匹配的题目，并结合你的项目经验追问。</p>
           <label class="mock-label">你的技术背景 / 简历摘要</label>
+          <div class="mock-resume-row">
+            <label class="mock-resume-btn" for="mockResumeFile">导入简历（PDF / 图片 / TXT）</label>
+            <input type="file" id="mockResumeFile" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" hidden>
+            <span class="mock-resume-status" id="mockResumeStatus"></span>
+          </div>
           <textarea id="mockBackground" class="mock-bg-input" rows="5"
-            placeholder="例：3 年数仓经验，熟悉 Spark / Hive，搭过实时数仓（Flink），最近在做 RAG 项目，用 LangChain + Milvus。"></textarea>
+            placeholder="例：3 年数仓经验，熟悉 Spark / Hive，搭过实时数仓（Flink），最近在做 RAG 项目，用 LangChain + Milvus。或点上方「导入简历」自动填充。"></textarea>
           <div class="mock-setup-meta">
             <span class="mock-hint" id="mockBankStatus">题库未加载</span>
             <button class="primary" id="startMockBtn">开始面试</button>

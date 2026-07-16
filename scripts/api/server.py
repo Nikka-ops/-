@@ -571,6 +571,25 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
             trend["broadcast"] = ""
         return 200, trend
 
+    if route == "/api/resume/extract":
+        data = dict(body or {})
+        b64 = str(data.get("resume_base64") or "")
+        if not b64:
+            return 400, {"error": "resume_base64 required"}
+        filename = str(data.get("resume_filename") or "resume.pdf")
+        try:
+            path = save_resume_base64(filename, b64)
+        except Exception as exc:  # noqa: BLE001
+            return 400, {"error": "save_failed", "message": str(exc)}
+        from scripts.resume_extract import extract_resume
+        res = extract_resume(path)
+        text = (res.text or "").strip()
+        if not text:
+            return 200, {"text": "", "needs_vision": res.needs_vision,
+                         "message": "无法读取简历文字（可能是扫描件/图片质量低），请手动填写背景"}
+        # keep the mock-interview background prompt compact
+        return 200, {"text": text[:2000], "needs_vision": res.needs_vision, "chars": len(text)}
+
     # ── 模拟面试 ────────────────────────────────────────────────────────────
     if route == "/api/mock/start":
         data = dict(body or {})
