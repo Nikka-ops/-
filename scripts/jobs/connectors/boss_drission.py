@@ -217,6 +217,7 @@ class BossDrissionConnector(JobConnector):
         return JobSearchResult.ok(all_jobs, f"{len(all_jobs)} jobs via DrissionPage")
 
     def _enrich(self, jobs: list) -> None:
+        fails = 0
         for job in jobs:
             if job.description:
                 continue
@@ -225,7 +226,15 @@ class BossDrissionConnector(JobConnector):
                 continue
             try:
                 payload = self._fetch_detail(security_id)
+                had = len(job.description or "")
                 apply_boss_detail(job, payload)
+                fails = 0 if len(job.description or "") > had else fails + 1
             except Exception:  # noqa: BLE001
-                continue
-            time.sleep(random.uniform(0.8, 1.5))
+                fails += 1
+            if fails >= 5:
+                # Consecutive detail failures usually mean risk-control kicked in;
+                # stop enriching rather than hammering the endpoint.
+                break
+            # 5–9s between detail fetches — detail pages trip Boss code-37 far
+            # more easily than the list endpoint.
+            time.sleep(random.uniform(5.0, 9.0))

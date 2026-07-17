@@ -2203,6 +2203,34 @@ function _resetMockToSetup() {
 
 // Wire up mock buttons
 $("startMockBtn")?.addEventListener("click", _startMockSession);
+
+async function _importMockResume(file) {
+  const status = $("mockResumeStatus");
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) { if (status) status.textContent = "文件过大（上限 8MB）"; return; }
+  if (status) status.textContent = `读取「${file.name}」…`;
+  try {
+    const b64 = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1] || "");
+      r.onerror = () => reject(new Error("读取失败"));
+      r.readAsDataURL(file);
+    });
+    const data = await postJson("/api/resume/extract", { resume_base64: b64, resume_filename: file.name });
+    if (data.error) throw new Error(data.message || data.error);
+    if (!data.text) { if (status) status.textContent = data.message || "未提取到文字，请手动填写"; return; }
+    const box = $("mockBackground");
+    if (box) box.value = data.text;
+    if (status) status.textContent = `已导入 ${data.chars} 字，可编辑后开始面试`;
+  } catch (e) {
+    if (status) status.textContent = "导入失败：" + (e.message || e);
+  }
+}
+$("mockResumeFile")?.addEventListener("change", (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) _importMockResume(f);
+  e.target.value = "";
+});
 $("mockSubmitBtn")?.addEventListener("click", () => _submitMockAnswer(false));
 $("mockSkipBtn")?.addEventListener("click",   () => _submitMockAnswer(true));
 $("mockQuitBtn")?.addEventListener("click",   _resetMockToSetup);
@@ -2420,6 +2448,38 @@ function renderTechStack() {
       <span class="ts-header-meta">基于 ${total_jobs} 个岗位 JD · 数据开发 + Agent 开发</span>
     </div>
     <div class="ts-grid">${cardsHtml}</div>
+    ${renderSalaryCards(techStackData.salary)}
+  `;
+}
+
+function renderSalaryCards(sal) {
+  if (!sal || !sal.sample) return "";
+  const maxBucket = Math.max(...(sal.buckets || []).map(b => b.count), 1);
+  const bucketRows = (sal.buckets || []).map(b => `
+    <div class="ts-item">
+      <span class="ts-item-label">${escapeHtml(b.range)}</span>
+      <div class="ts-bar-wrap"><div class="ts-bar-fill" style="width:${Math.round(b.count / maxBucket * 100)}%"></div></div>
+      <span class="ts-item-count">${b.count}</span>
+    </div>`).join("");
+  const compRows = (sal.companies || []).slice(0, 10).map(c => `
+    <div class="ts-item">
+      <span class="ts-item-label" title="${escapeHtml(c.company)}">${escapeHtml(c.company)}</span>
+      <div class="ts-bar-wrap"><div class="ts-bar-fill" style="width:${Math.round(c.median_k / (sal.companies[0]?.median_k || 1) * 100)}%"></div></div>
+      <span class="ts-item-count">${c.median_k}K</span>
+      <span class="ts-item-pct">${c.min_k}-${c.max_k}K</span>
+    </div>`).join("");
+  const intern = sal.intern_daily?.sample
+    ? `<span class="ts-header-meta">· 实习日薪中位 ${sal.intern_daily.median} 元/天（${sal.intern_daily.sample} 个）</span>`
+    : "";
+  return `
+    <div class="ts-header" style="margin-top:24px">
+      <h2>薪资分析</h2>
+      <span class="ts-header-meta">${sal.sample} 个含薪资岗位 · 月薪中位 ${sal.median_k}K ${intern}</span>
+    </div>
+    <div class="ts-grid">
+      <div class="ts-card"><div class="ts-card-title">月薪分布（中值落桶）</div>${bucketRows}</div>
+      <div class="ts-card"><div class="ts-card-title">公司薪资中位（≥3 个岗位）</div>${compRows}</div>
+    </div>
   `;
 }
 $("closeSettings").addEventListener("click", closeDrawer);
