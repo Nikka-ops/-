@@ -11,17 +11,26 @@ from urllib.parse import parse_qs, urlparse, unquote
 
 import requests
 
-from scripts.api.uploads import save_resume_base64
+from scripts.api.uploads import delete_resume_upload, save_resume_base64
 from scripts.config import (
     app_display_name,
     banks_dir,
+    boss_zhipin_cookie_configured,
+    deepseek_api_base,
+    deepseek_api_key,
+    deepseek_model,
     focus_role_ids,
     full_scrape_recency_days,
     jobs_dir,
     job_recency_days,
     package_root,
+    project_env_path,
     resolve_posts_fallback,
     sample_posts_path,
+    write_project_env,
+    xhs_cookies_configured,
+    xhs_cookies_source,
+    xhs_driver,
 )
 from scripts.jobs.service import (
     catalog_job_sources,
@@ -247,7 +256,17 @@ def _config_from_body(
     )
 
 
+def _cleanup_resume_upload_if_needed(body: dict | None, config: RunConfig | None) -> None:
+    if not body or not body.get("resume_base64") or not config or not config.resume_path:
+        return
+    delete_resume_upload(config.resume_path)
+
+
 def _local_report_status() -> dict:
+    from scripts.corpus.ai_gate import ai_enabled
+    from scripts.corpus.tech_roles import resolve_role_label
+
+    enhanced = ai_enabled()
     path = _local_corpus_path()
     if not path:
         return {
@@ -255,6 +274,16 @@ def _local_report_status() -> dict:
             "local_post_count": 0,
             "sample_posts": str(DEFAULT_SAMPLE) if DEFAULT_SAMPLE.is_file() else None,
             "recency_window_days": full_scrape_recency_days(),
+            "ai_enabled": enhanced,
+            "app_mode": "enhanced" if enhanced else "basic",
+            "app_mode_label": "增强模式" if enhanced else "基础模式",
+            "app_mode_message": (
+                "已配置 AI Key，可直接使用 AI 解答、模拟面试和 JD 覆盖分析"
+                if enhanced
+                else "未配置 AI Key，当前以本地样例和规则模式运行，仍可直接体验题库和界面"
+            ),
+            "demo_role_id": "ai_app",
+            "demo_role_label": resolve_role_label("ai_app", None),
         }
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -275,6 +304,16 @@ def _local_report_status() -> dict:
         "sample_posts": str(DEFAULT_SAMPLE) if DEFAULT_SAMPLE.is_file() else None,
         "sample_post_count": sample_count,
         "recency_window_days": full_scrape_recency_days(),
+        "ai_enabled": enhanced,
+        "app_mode": "enhanced" if enhanced else "basic",
+        "app_mode_label": "增强模式" if enhanced else "基础模式",
+        "app_mode_message": (
+            "已配置 AI Key，可直接使用 AI 解答、模拟面试和 JD 覆盖分析"
+            if enhanced
+            else "未配置 AI Key，当前以本地样例和规则模式运行，仍可直接体验题库和界面"
+        ),
+        "demo_role_id": "ai_app",
+        "demo_role_label": resolve_role_label("ai_app", None),
     }
 
 
@@ -305,6 +344,26 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         payload = {"status": "ok", "service": app_display_name()}
         payload.update(_local_report_status())
         return 200, payload
+
+    if method == "GET" and route == "/api/settings":
+        return 200, {
+            "deepseek": {
+                "configured": bool(deepseek_api_key()),
+                "api_base": deepseek_api_base(),
+                "model": deepseek_model(),
+            },
+            "sources": {
+                "xiaohongshu": {
+                    "configured": xhs_cookies_configured(),
+                    "source": xhs_cookies_source(),
+                    "driver": xhs_driver(),
+                },
+                "boss": {
+                    "configured": boss_zhipin_cookie_configured(),
+                },
+            },
+            "env_path": str(project_env_path()),
+        }
 
     if method == "GET" and route == "/api/roles":
         ids = focus_role_ids()
@@ -422,8 +481,14 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
     if route == "/api/bank":
         if not body or not body.get("role"):
             return 400, {"error": "role is required"}
-        config = _config_from_body(body, default_agent_handoff=False)
-        result = run_pipeline(config)
+        try:
+            config = _config_from_body(body, default_agent_handoff=False)
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
+        try:
+            result = run_pipeline(config)
+        finally:
+            _cleanup_resume_upload_if_needed(body, config)
         payload = result.to_dict()
         bundle = load_bank_bundle(Path(config.cache_dir), result.slug)
         if bundle:
@@ -442,7 +507,10 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
             config = _config_from_body(data, require_resume=True)
         except ValueError as exc:
             return 400, {"error": str(exc)}
-        result = run_pipeline(config)
+        try:
+            result = run_pipeline(config)
+        finally:
+            _cleanup_resume_upload_if_needed(data, config)
         return 200, result.to_dict()
 
     if route == "/api/handoff":
@@ -451,8 +519,14 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         data = dict(body or {})
         data["prep_mode"] = "agent"
         data["agent_handoff"] = True
-        config = _config_from_body(data)
-        result = run_pipeline(config)
+        try:
+            config = _config_from_body(data)
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
+        try:
+            result = run_pipeline(config)
+        finally:
+            _cleanup_resume_upload_if_needed(data, config)
         return 200, result.to_dict()
 
     if route == "/api/prep":
@@ -581,14 +655,74 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
             path = save_resume_base64(filename, b64)
         except Exception as exc:  # noqa: BLE001
             return 400, {"error": "save_failed", "message": str(exc)}
-        from scripts.resume_extract import extract_resume
-        res = extract_resume(path)
-        text = (res.text or "").strip()
-        if not text:
-            return 200, {"text": "", "needs_vision": res.needs_vision,
-                         "message": "无法读取简历文字（可能是扫描件/图片质量低），请手动填写背景"}
-        # keep the mock-interview background prompt compact
-        return 200, {"text": text[:2000], "needs_vision": res.needs_vision, "chars": len(text)}
+        try:
+            from scripts.resume_extract import extract_resume
+
+            res = extract_resume(path)
+            text = (res.text or "").strip()
+            if not text:
+                ext = Path(filename).suffix.lower()
+                if ext == ".pdf":
+                    msg = "未从 PDF 中提取到文字；当前仅支持文本型 PDF 自动导入，扫描版 PDF 请转图片后重试或手动填写背景"
+                else:
+                    msg = "无法读取简历文字（可能是扫描件/图片质量低），请手动填写背景"
+                return 200, {"text": "", "needs_vision": res.needs_vision, "message": msg}
+            # keep the mock-interview background prompt compact
+            return 200, {"text": text[:2000], "needs_vision": res.needs_vision, "chars": len(text)}
+        finally:
+            delete_resume_upload(path)
+
+    if route == "/api/settings/save":
+        data = dict(body or {})
+        key = str(data.get("deepseek_api_key") or "").strip()
+        clear_key = bool(data.get("clear_deepseek_api_key"))
+        api_base = str(data.get("deepseek_api_base") or "").strip() or "https://api.deepseek.com"
+        model = str(data.get("deepseek_model") or "").strip() or "deepseek-chat"
+        xhs_cookies = str(data.get("xhs_cookies") or "").strip()
+        clear_xhs_cookies = bool(data.get("clear_xhs_cookies"))
+        xhs_driver_pref = str(data.get("xhs_driver") or "").strip().lower()
+        boss_cookie = str(data.get("boss_cookie") or "").strip()
+        clear_boss_cookie = bool(data.get("clear_boss_cookie"))
+        updates = {
+            "DEEPSEEK_API_BASE": api_base,
+            "DEEPSEEK_MODEL": model,
+            "DEEPSEEK_API_KEY": None if clear_key else (key or deepseek_api_key() or None),
+            "XHS_COOKIES": None if clear_xhs_cookies else xhs_cookies or None,
+            "XHS_DRIVER": xhs_driver_pref or xhs_driver(),
+            "BOSS_ZHIPIN_COOKIE": None if clear_boss_cookie else boss_cookie or None,
+        }
+        if clear_key:
+            updates["DEEPSEEK_API_KEY"] = None
+        elif key:
+            updates["DEEPSEEK_API_KEY"] = key
+        if clear_xhs_cookies:
+            updates["XHS_COOKIES"] = None
+        elif not xhs_cookies:
+            updates.pop("XHS_COOKIES", None)
+        if clear_boss_cookie:
+            updates["BOSS_ZHIPIN_COOKIE"] = None
+        elif not boss_cookie:
+            updates.pop("BOSS_ZHIPIN_COOKIE", None)
+        write_project_env(updates)
+        return 200, {
+            "ok": True,
+            "deepseek": {
+                "configured": bool(deepseek_api_key()),
+                "api_base": deepseek_api_base(),
+                "model": deepseek_model(),
+            },
+            "sources": {
+                "xiaohongshu": {
+                    "configured": xhs_cookies_configured(),
+                    "source": xhs_cookies_source(),
+                    "driver": xhs_driver(),
+                },
+                "boss": {
+                    "configured": boss_zhipin_cookie_configured(),
+                },
+            },
+            "env_path": str(project_env_path()),
+        }
 
     # ── 模拟面试 ────────────────────────────────────────────────────────────
     if route == "/api/mock/start":

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 启动专用 CDP Chrome 抓取小红书（真浏览器、独立 Profile，避免 Playwright 闪退）。
+# 启动专用 CDP Chrome 抓取小红书（真浏览器、独立 Profile，供 Playwright / Spider_XHS 复用）。
 set -euo pipefail
 
 PORT="${XHS_CDP_PORT:-9233}"
@@ -57,7 +57,7 @@ fi
 
 echo ""
 echo "请在【专用 Chrome 窗口】用手机扫码登录小红书（仅首次）。"
-echo "  勿关窗口；抓取时 Spider_XHS 会复用此登录态。"
+echo "  勿关窗口；抓取时 Playwright / Spider_XHS 会复用此登录态。"
 echo "  若闪退: 先关所有该 Profile 窗口，再重跑本脚本。"
 echo ""
 echo "环境变量: XHS_CDP_PORT=$PORT  XHS_CDP=1（默认）"

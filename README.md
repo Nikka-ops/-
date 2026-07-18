@@ -73,8 +73,9 @@ DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
 DEEPSEEK_API_BASE=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 
-# 小红书抓取（可选）
+# 小红书抓取（可选；推荐专用 Chrome 会话）
 XHS_WEB_SESSION=<从浏览器 DevTools 复制 web_session 值>
+XHS_DRIVER=playwright
 ```
 
 ### 3. 启动 Web UI
@@ -87,7 +88,12 @@ bash start-web.sh
 .venv\Scripts\python.exe -m scripts.api.server --port 8765
 ```
 
+macOS 也可直接双击 `start.command`，会自动启动服务并打开浏览器。
+Windows 可直接双击 `start.bat`。
+
 浏览器打开 [http://localhost:8765](http://localhost:8765)（支持 `#bank` / `#jobs` / `#mock` 直达对应视图）
+
+首次打开若没有本地缓存，首页会自动加载内置 Demo 题库；未配置 `DEEPSEEK_API_KEY` 时会以基础模式运行，仍可直接体验题库、岗位和界面。
 
 ---
 
@@ -109,7 +115,7 @@ bash start-web.sh
 
 ### 模拟面试（Mock 视图）
 
-- **导入简历**（PDF / 图片 / TXT）自动填充技术背景，或手动填写
+- **导入简历**（文本型 PDF / 图片 / TXT）自动填充技术背景，或手动填写
 - AI 面试官从题库挑选**最匹配的题目**，结合你的项目经验实时追问、逐题点评
 - 面试结束生成整体评价
 
@@ -131,7 +137,7 @@ bash start-web.sh
 
 ### 面经抓取
 
-- **小红书**：通过 Spider_XHS CDP 模式抓取，支持增量（不重复抓已有内容）
+- **小红书**：默认通过 `Playwright + 已登录 CDP Chrome` 抓取，`Spider_XHS` 作为兼容回退；支持增量（不重复抓已有内容）
 - **牛客**：自动发现面经帖，二次请求详情页获取完整正文
 - **图片帖**：自动下载图片 → RapidOCR 读取文字 → 合并入正文；OCR 失败/低质时可选调**视觉大模型**（Qwen-VL / GLM-4V，配 `VISION_API_KEY`）兜底读图
 - **每日定时抓取**：`install_daily_schedule.py` 注册系统计划任务，每天自动增量抓小红书 + 牛客 + 岗位快照
@@ -244,10 +250,15 @@ interview-radar/
 ## 小红书接入（可选）
 
 ```bash
-# 安装 Spider_XHS
+# 推荐：浏览器态主抓取
+pip install -e ".[xhs-browser]"
+bash scripts/tools/start-xhs-cdp-chrome.sh
+
+# 兼容回退：Spider_XHS
 pip install spider-xhs
 
-# 在 .env 中配置 Cookie
+# 在 .env 中配置 Cookie / 驱动偏好
+XHS_DRIVER=playwright
 XHS_WEB_SESSION=<从浏览器 DevTools Application → Cookies 复制>
 ```
 

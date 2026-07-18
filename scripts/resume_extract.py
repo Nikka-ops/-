@@ -62,10 +62,6 @@ def extract_resume(path, *, try_ocr: bool = True) -> ResumeExtraction:
         text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
         if len(text) >= _MIN_TEXT_CHARS:
             return ResumeExtraction(text=text, needs_vision=False, asset_path=str(p))
-        if try_ocr:
-            ocr = _try_ocr(str(p))
-            if ocr and ocr.text:
-                return ocr
         return ResumeExtraction(text="", needs_vision=True, asset_path=str(p))
     text = p.read_text(encoding="utf-8", errors="ignore").strip()
     needs_vision = len(text) < _MIN_TEXT_CHARS

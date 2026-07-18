@@ -3,12 +3,16 @@
 
 # --- test_api_service.py ---
 
+from argparse import Namespace
+import base64
 from pathlib import Path
 from urllib.parse import quote
 
 from scripts.api.server import handle_request
+from scripts.api.uploads import UploadValidationError, save_resume_base64
 from scripts.models import RawPost
 from scripts.corpus.store import save_raw_posts
+from scripts.run import _config_from_args, main
 from scripts.service import RunConfig, run_pipeline
 
 
@@ -167,11 +171,7 @@ def test_handle_predict_api(tmp_path: Path, monkeypatch):
 
 # --- test_web_ui.py ---
 
-import base64
-from pathlib import Path
-
 from scripts.api.server import STATIC_DIR, _local_report_status, _resolve_static, handle_request
-from scripts.api.uploads import save_resume_base64
 
 
 def test_static_index_resolves():
@@ -207,6 +207,129 @@ def test_api_status_includes_sample_posts():
     status, payload = handle_request("GET", "/api/status")
     assert status == 200
     assert payload.get("sample_posts")
+    assert payload["app_mode"] in {"basic", "enhanced"}
+    assert payload["app_mode_label"]
+    assert payload["demo_role_id"] == "ai_app"
+
+
+def test_api_settings_get(tmp_path, monkeypatch):
+    import scripts.config as cfg
+    import scripts.api.server as srv
+
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr(cfg, "project_env_path", lambda: env_path)
+    monkeypatch.setattr(srv, "project_env_path", lambda: env_path)
+    monkeypatch.setenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-chat")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    status, payload = handle_request("GET", "/api/settings")
+    assert status == 200
+    assert payload["deepseek"]["configured"] is False
+    assert payload["deepseek"]["api_base"] == "https://api.deepseek.com"
+    assert payload["sources"]["xiaohongshu"]["configured"] is False
+    assert payload["sources"]["xiaohongshu"]["driver"] == "playwright"
+    assert payload["sources"]["boss"]["configured"] is False
+    assert payload["env_path"] == str(env_path)
+
+
+def test_api_settings_save(tmp_path, monkeypatch):
+    import scripts.config as cfg
+    import scripts.api.server as srv
+
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr(cfg, "project_env_path", lambda: env_path)
+    monkeypatch.setattr(srv, "project_env_path", lambda: env_path)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_BASE", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+
+    status, payload = handle_request(
+        "POST",
+        "/api/settings/save",
+        {
+            "deepseek_api_key": "sk-test-123",
+            "deepseek_api_base": "https://api.deepseek.com",
+            "deepseek_model": "deepseek-chat",
+        },
+    )
+    assert status == 200
+    assert payload["deepseek"]["configured"] is True
+    text = env_path.read_text(encoding="utf-8")
+    assert "DEEPSEEK_API_KEY=sk-test-123" in text
+
+    status_sources, payload_sources = handle_request(
+        "POST",
+        "/api/settings/save",
+        {
+            "xhs_driver": "spider_xhs",
+            "xhs_cookies": "web_session=test_cookie; a1=abc",
+            "boss_cookie": "wt2=boss_cookie_value_123456789",
+        },
+    )
+    assert status_sources == 200
+    updated_text = env_path.read_text(encoding="utf-8")
+    assert "XHS_DRIVER=spider_xhs" in updated_text
+    assert "XHS_COOKIES=web_session=test_cookie; a1=abc" in updated_text
+    assert "BOSS_ZHIPIN_COOKIE=wt2=boss_cookie_value_123456789" in updated_text
+
+    status2, payload2 = handle_request(
+        "POST",
+        "/api/settings/save",
+        {
+            "clear_deepseek_api_key": True,
+            "clear_xhs_cookies": True,
+            "clear_boss_cookie": True,
+            "deepseek_api_base": "https://api.deepseek.com",
+            "deepseek_model": "deepseek-chat",
+        },
+    )
+    assert status2 == 200
+    assert payload2["deepseek"]["configured"] is False
+    final_text = env_path.read_text(encoding="utf-8")
+    assert "DEEPSEEK_API_KEY=" not in final_text
+    assert "XHS_COOKIES=" not in final_text
+    assert "BOSS_ZHIPIN_COOKIE=" not in final_text
+
+
+def test_xhs_run_safe_prefers_playwright(monkeypatch):
+    import scripts.scrape.xhs_export as xhs
+
+    called: list[str] = []
+
+    monkeypatch.setattr(xhs, "_driver_order", lambda: ["playwright", "spider_xhs"])
+    monkeypatch.setattr(xhs, "_playwright_ready", lambda: True)
+    monkeypatch.setenv("XHS_COOKIES", "web_session=test_cookie; a1=abc")
+
+    def fake_run(driver_name, keywords, **kwargs):
+        called.append(driver_name)
+        return {"ok": True, "driver": driver_name, "keywords": keywords}
+
+    monkeypatch.setattr(xhs, "_run_driver_scrape", fake_run)
+    result = xhs.run_safe_xhs_scrape(["数据开发 面经"])
+    assert result["driver"] == "playwright"
+    assert called == ["playwright"]
+
+
+def test_xhs_run_safe_falls_back_to_spider(monkeypatch):
+    import scripts.scrape.xhs_export as xhs
+
+    called: list[str] = []
+
+    monkeypatch.setattr(xhs, "_driver_order", lambda: ["playwright", "spider_xhs"])
+    monkeypatch.setattr(xhs, "_playwright_ready", lambda: True)
+    monkeypatch.setenv("XHS_COOKIES", "web_session=test_cookie; a1=abc")
+
+    def fake_run(driver_name, keywords, **kwargs):
+        called.append(driver_name)
+        if driver_name == "playwright":
+            raise RuntimeError("cdp unavailable")
+        return {"ok": True, "driver": driver_name, "keywords": keywords}
+
+    monkeypatch.setattr(xhs, "_run_driver_scrape", fake_run)
+    result = xhs.run_safe_xhs_scrape(["数据开发 面经"])
+    assert result["driver"] == "spider_xhs"
+    assert called == ["playwright", "spider_xhs"]
 
 
 def test_api_jobs_list():
@@ -233,6 +356,32 @@ def test_save_resume_base64_roundtrip(tmp_path, monkeypatch):
     saved = Path(save_resume_base64("resume.txt", encoded))
     assert saved.is_file()
     assert saved.read_bytes() == content
+
+
+def test_save_resume_base64_rejects_oversize(tmp_path, monkeypatch):
+    import scripts.api.uploads as up
+
+    monkeypatch.setattr(up, "_UPLOAD_DIR", tmp_path)
+    encoded = base64.b64encode(b"a" * (up._MAX_UPLOAD_BYTES + 1)).decode("ascii")
+    try:
+        save_resume_base64("resume.txt", encoded)
+    except UploadValidationError as exc:
+        assert "file too large" in str(exc)
+    else:
+        raise AssertionError("expected UploadValidationError for oversize upload")
+
+
+def test_save_resume_base64_rejects_mismatched_type(tmp_path, monkeypatch):
+    import scripts.api.uploads as up
+
+    monkeypatch.setattr(up, "_UPLOAD_DIR", tmp_path)
+    encoded = base64.b64encode(b"plain text").decode("ascii")
+    try:
+        save_resume_base64("resume.pdf", encoded)
+    except UploadValidationError as exc:
+        assert "invalid PDF" in str(exc)
+    else:
+        raise AssertionError("expected UploadValidationError for invalid PDF upload")
 
 
 def test_predict_with_resume_base64(tmp_path, monkeypatch):
@@ -268,14 +417,42 @@ def test_predict_with_resume_base64(tmp_path, monkeypatch):
     assert status == 200
     assert payload.get("agent_handoff")
 
+
+def test_resume_extract_api_cleans_uploaded_file(tmp_path, monkeypatch):
+    import scripts.api.uploads as up
+
+    monkeypatch.setattr(up, "_UPLOAD_DIR", tmp_path)
+    encoded = base64.b64encode("项目: RAG LangChain".encode("utf-8")).decode("ascii")
+    status, payload = handle_request(
+        "POST",
+        "/api/resume/extract",
+        {"resume_base64": encoded, "resume_filename": "resume.txt"},
+    )
+    assert status == 200
+    assert payload["text"].startswith("项目: RAG")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_resume_extract_api_text_pdf_boundary_message(tmp_path, monkeypatch):
+    import scripts.api.uploads as up
+
+    monkeypatch.setattr(up, "_UPLOAD_DIR", tmp_path)
+    fixture = Path(__file__).parent / "fixtures" / "sample_resume.pdf"
+    blank_bytes = fixture.read_bytes().replace(b"Skill driven agent project Python RAG", b" ")
+    encoded = base64.b64encode(blank_bytes).decode("ascii")
+    status, payload = handle_request(
+        "POST",
+        "/api/resume/extract",
+        {"resume_base64": encoded, "resume_filename": "resume.pdf"},
+    )
+    assert status == 200
+    assert payload["text"] == ""
+    assert "文本型 PDF" in payload["message"]
+    assert list(tmp_path.iterdir()) == []
+
 # --- test_run.py ---
 
 import json
-from pathlib import Path
-
-from scripts.models import RawPost
-from scripts.corpus.store import save_raw_posts
-from scripts.run import main
 
 
 def test_run_role_only_from_raw_posts(tmp_path: Path, monkeypatch):
@@ -424,6 +601,38 @@ def test_run_bank_only_skips_handoff(tmp_path: Path, monkeypatch):
     slug_dir = next(cache_dir.iterdir())
     assert (slug_dir / "question_bank.json").is_file()
     assert not (slug_dir / "agent_handoff.md").is_file()
+
+
+def test_run_config_from_args_preserves_role_id():
+    args = Namespace(
+        role="",
+        role_id="ai_app",
+        resume="",
+        companies=[],
+        cache_dir="corpus_cache/banks",
+        cache_ttl_days=7,
+        refresh=False,
+        rebuild_only=False,
+        raw_posts="",
+        from_report=False,
+        nowcoder_urls=[],
+        discover_nowcoder=False,
+        discover_max=50,
+        xhs_live=False,
+        xhs_deep=True,
+        keywords=[],
+        top_n=30,
+        no_semantic_merge=False,
+        merge_threshold=0.72,
+        filter_company_questions=False,
+        prep_mode="agent",
+        no_agent_handoff=False,
+        bank_only=False,
+        resume_text="",
+    )
+    config = _config_from_args(args)
+    assert config.role_id == "ai_app"
+    assert config.role == "AI 应用开发"
 
 # --- test_agent_handoff.py ---
 
