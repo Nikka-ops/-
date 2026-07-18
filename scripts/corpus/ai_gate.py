@@ -128,6 +128,39 @@ def offline_post_keep(combined: str, *, has_images: bool = False) -> bool:
     return bool(_OFFLINE_POST.search(combined))
 
 
+# The model frequently ignores the "data|ai_app|null" instruction and emits
+# free-form slugs (client_dev, candidate, test_dev, java_backend, game_client…).
+# Collapse them to the canonical focus set so the ingest role filter works.
+_OFF_ROLE_MARKERS = (
+    "backend", "back_end", "frontend", "front_end", "fullstack", "full_stack",
+    "test", "qa", "client", "game", "java", "c++", "cpp", "android", "ios",
+    "embedded", "hardware", "firmware", "mobile", "sre", "security", "algorithm",
+    "nlp", "design", "product", "candidate", "swe", "sde", "fae", "ic_",
+    "vehicle", "server", "software", "app_dev", "app_soft", "interaction",
+    "system_dev", "operation", "web",
+)
+
+
+def _focus_role_id(rid: str | None) -> str | None:
+    """Map an AI-returned role_id (canonical or free-form) to data|ai_app|None."""
+    r = (rid or "").strip().lower()
+    if not r:
+        return None
+    canon = canonical_role_id(r)
+    if canon in ("data", "ai_app"):
+        return canon
+    if any(m in r for m in _OFF_ROLE_MARKERS):
+        return None
+    if "data" in r:  # data_engineer, ai_data_engineer, data|ai_app …
+        # data_analyst / data_scientist are NOT data-development roles
+        if any(k in r for k in ("analyst", "scientist")):
+            return None
+        return "data"
+    if any(k in r for k in ("ai_app", "agent", "rag", "llm", "mcp", "大模型", "ai应用", "llmapp")):
+        return "ai_app"
+    return None
+
+
 def judge_post(snippet: str, *, url: str = "", cache: dict | None = None) -> PostVerdict | None:
     snip = re.sub(r"\s+", " ", (snippet or "").strip())[: post_ai_filter_max_chars()]
     if not snip:
@@ -138,7 +171,7 @@ def judge_post(snippet: str, *, url: str = "", cache: dict | None = None) -> Pos
         row = store[key]
         return PostVerdict(
             bool(row.get("keep")),
-            canonical_role_id(str(row.get("role_id") or "")) or None,
+            _focus_role_id(str(row.get("role_id") or "")),
             [str(t) for t in row.get("topics") or []],
             str(row.get("reason") or ""),
         )
@@ -147,7 +180,7 @@ def judge_post(snippet: str, *, url: str = "", cache: dict | None = None) -> Pos
         return None
     verdict = PostVerdict(
         bool(data.get("keep")),
-        canonical_role_id(str(data.get("role_id") or "")) or None,
+        _focus_role_id(str(data.get("role_id") or "")),
         [str(t) for t in (data.get("topics") or []) if t],
         str(data.get("reason") or ""),
     )
