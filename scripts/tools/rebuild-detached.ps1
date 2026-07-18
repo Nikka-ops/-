@@ -1,4 +1,4 @@
-﻿# 独立进程重建题库 — 不随终端/会话退出而被杀。
+# 独立进程重建题库 — 不随终端/会话退出而被杀。
 # 用法:  powershell -File scripts\tools\rebuild-detached.ps1 [-RoleId data] [-Refresh]
 # 日志:  corpus_cache\daily\rebuild.log（实时 tail: Get-Content -Wait）
 param(
