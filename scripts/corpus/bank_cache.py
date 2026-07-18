@@ -362,11 +362,19 @@ def save_bank_artifacts(
     d = bank_dir(cache_root, slug)
     d.mkdir(parents=True, exist_ok=True)
     rp = raw_posts_path(cache_root, slug)
-    # Never shrink the raw post cache: a rebuild filters the cached posts, and
-    # writing the filtered subset back would destroy source data (filters are
-    # re-applied at read time anyway). Only write when we have at least as many.
+    # Persist the filtered set so stale role labels don't linger, but refuse a
+    # catastrophic collapse (empty, or <40% of a sizable prior) which signals a
+    # failed/over-aggressive filter rather than normal trimming.
     existing = load_raw_posts(rp) if rp.is_file() else []
-    if len(posts) >= len(existing):
+    prev_n, new_n = len(existing), len(posts)
+    catastrophic = existing and (new_n == 0 or (prev_n >= 50 and new_n < prev_n * 0.4))
+    if catastrophic:
+        print(
+            f"[bank_cache] refusing to overwrite {slug} raw posts: {prev_n} -> {new_n} "
+            "(looks like a failed filter); keeping existing",
+            file=__import__("sys").stderr,
+        )
+    else:
         save_raw_posts(posts, rp)
     from scripts.corpus.store import save_questions
 

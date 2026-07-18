@@ -141,6 +141,29 @@ _OFF_ROLE_MARKERS = (
 )
 
 
+# Titles that name another role explicitly — the model sometimes still tags these
+# "data". A rule-based veto (only when no data/agent signal is present) overrides
+# such misjudgments. Kept narrow to avoid false-dropping genuine data/AI posts.
+_TITLE_OFF_ROLE = re.compile(
+    r"(后端开发|客户端开发|客户端性能|游戏客户端|嵌入式|底软|测试开发|测开|软件测试|性能测试|"
+    r"前端开发|Java\s*(开发|简历|后端|工程师)|C\+\+|golang|安卓开发|Android\s*开发|iOS\s*开发|"
+    r"硬件开发|固件|驱动开发|运维开发|SRE|网络工程师|算法工程师|机器学习工程师)",
+    re.I,
+)
+_TITLE_ON_ROLE = re.compile(
+    r"数据开发|数仓|数开|大数据|数据研发|数据仓库|ETL|数据工程|实时数仓|湖仓|"
+    r"Agent|智能体|RAG|大模型应用|LLM\s*应用|MCP|LangChain|AI\s*应用",
+    re.I,
+)
+
+
+def _title_off_role(snippet: str) -> bool:
+    """True when the post's head clearly names a non-target role and shows no
+    data/agent signal — used to veto lenient AI role judgments."""
+    head = (snippet or "")[:60]
+    return bool(_TITLE_OFF_ROLE.search(head)) and not _TITLE_ON_ROLE.search(head)
+
+
 def _focus_role_id(rid: str | None) -> str | None:
     """Map an AI-returned role_id (canonical or free-form) to data|ai_app|None."""
     r = (rid or "").strip().lower()
@@ -167,11 +190,13 @@ def judge_post(snippet: str, *, url: str = "", cache: dict | None = None) -> Pos
         return PostVerdict(False, reason="empty")
     key = _post_key(url, snip)
     store = cache if cache is not None else load_cache("post_ai_filter_cache.json")
+    off_role = _title_off_role(snip)
     if key in store and isinstance(store[key], dict):
         row = store[key]
+        rid = None if off_role else _focus_role_id(str(row.get("role_id") or ""))
         return PostVerdict(
             bool(row.get("keep")),
-            _focus_role_id(str(row.get("role_id") or "")),
+            rid,
             [str(t) for t in row.get("topics") or []],
             str(row.get("reason") or ""),
         )
@@ -180,7 +205,7 @@ def judge_post(snippet: str, *, url: str = "", cache: dict | None = None) -> Pos
         return None
     verdict = PostVerdict(
         bool(data.get("keep")),
-        _focus_role_id(str(data.get("role_id") or "")),
+        None if off_role else _focus_role_id(str(data.get("role_id") or "")),
         [str(t) for t in (data.get("topics") or []) if t],
         str(data.get("reason") or ""),
     )
