@@ -17,6 +17,16 @@ _HTTP_461_HINT = (
 )
 
 
+_MAX_CONSEC_SEARCH_FAIL = 6   # empty/failed keyword searches in a row → abort
+_MAX_CONSEC_DETAIL_FAIL = 8   # failed note-detail fetches in a row → abort
+_AUTH_ERROR_MARKERS = ("登录", "已过期", "风控", "461", "unauthorized", "forbidden", "验证")
+
+
+def _looks_like_auth_error(msg: object) -> bool:
+    s = str(msg or "").lower()
+    return any(m in s for m in _AUTH_ERROR_MARKERS)
+
+
 class SpiderXHSNotInstalledError(FileNotFoundError):
     pass
 
@@ -171,14 +181,27 @@ class SpiderXHSDriver:
                 raise SpiderXHSScrapeError(f"小红书搜索不可用（HTTP {status}）。")
 
             api = XHS_Apis()
+            # Circuit breaker: a session that expires or gets risk-controlled
+            # mid-run makes every subsequent call fail. Abort early instead of
+            # grinding through all keywords (the old behaviour logged ~90 errors).
+            consec_search_fail = 0
+            consec_detail_fail = 0
             for i, keyword in enumerate(cleaned):
                 if i and pause_seconds > 0:
                     time.sleep(pause_seconds)
                 ok, msg, items = api.search_some_note(
                     keyword, per_kw, cookies, sort_type_choice=sort_type_choice
                 )
+                if _looks_like_auth_error(msg):
+                    raise SpiderXHSScrapeError(f"登录失效/风控（{msg}）。{_HTTP_461_HINT}")
                 if not ok or not items:
+                    consec_search_fail += 1
+                    if consec_search_fail >= _MAX_CONSEC_SEARCH_FAIL and not merged:
+                        raise SpiderXHSScrapeError(
+                            f"连续 {consec_search_fail} 个关键词无结果，疑似登录失效/风控。{_HTTP_461_HINT}"
+                        )
                     continue
+                consec_search_fail = 0
                 for item in items:
                     if item.get("model_type") != "note":
                         continue
@@ -191,11 +214,20 @@ class SpiderXHSDriver:
                         url = f"https://www.xiaohongshu.com/explore/{note_id}"
                         if xsec:
                             url += f"?xsec_token={xsec}"
-                        ok_d, _, detail = api.get_note_info(url, cookies)
+                        ok_d, msg_d, detail = api.get_note_info(url, cookies)
+                        if _looks_like_auth_error(msg_d):
+                            raise SpiderXHSScrapeError(f"登录失效/风控（{msg_d}）。{_HTTP_461_HINT}")
                         if ok_d and detail and detail.get("data", {}).get("items"):
                             raw = detail["data"]["items"][0]
                             raw["url"] = url
                             note_dict = note_from_handled(handle_note_info(raw))
+                            consec_detail_fail = 0
+                        else:
+                            consec_detail_fail += 1
+                            if consec_detail_fail >= _MAX_CONSEC_DETAIL_FAIL and not merged:
+                                raise SpiderXHSScrapeError(
+                                    f"连续 {consec_detail_fail} 篇笔记详情抓取失败，疑似登录失效/风控。{_HTTP_461_HINT}"
+                                )
                     else:
                         note_dict = note_from_search_item(item)
                     if note_dict:

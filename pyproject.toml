@@ -42,8 +42,8 @@ interview-radar-doctor = "scripts.doctor:main"
 interview-radar-jobs = "scripts.run_jobs:main"
 
 [project.urls]
-Homepage = "https://github.com/KunChen1110/InterviewRadar"
-Repository = "https://github.com/KunChen1110/InterviewRadar"
+Homepage = "https://github.com/Nikka-ops/-"
+Repository = "https://github.com/Nikka-ops/-"
 Issues = "https://github.com/KunChen1110/InterviewRadar/issues"
 
 [tool.setuptools.packages.find]

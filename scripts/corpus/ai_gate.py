@@ -128,17 +128,75 @@ def offline_post_keep(combined: str, *, has_images: bool = False) -> bool:
     return bool(_OFFLINE_POST.search(combined))
 
 
+# The model frequently ignores the "data|ai_app|null" instruction and emits
+# free-form slugs (client_dev, candidate, test_dev, java_backend, game_client…).
+# Collapse them to the canonical focus set so the ingest role filter works.
+_OFF_ROLE_MARKERS = (
+    "backend", "back_end", "frontend", "front_end", "fullstack", "full_stack",
+    "test", "qa", "client", "game", "java", "c++", "cpp", "android", "ios",
+    "embedded", "hardware", "firmware", "mobile", "sre", "security", "algorithm",
+    "nlp", "design", "product", "candidate", "swe", "sde", "fae", "ic_",
+    "vehicle", "server", "software", "app_dev", "app_soft", "interaction",
+    "system_dev", "operation", "web",
+)
+
+
+# Titles that name another role explicitly — the model sometimes still tags these
+# "data". A rule-based veto (only when no data/agent signal is present) overrides
+# such misjudgments. Kept narrow to avoid false-dropping genuine data/AI posts.
+_TITLE_OFF_ROLE = re.compile(
+    r"(后端开发|客户端开发|客户端性能|游戏客户端|嵌入式|底软|测试开发|测开|软件测试|性能测试|"
+    r"前端开发|Java\s*(开发|简历|后端|工程师)|C\+\+|golang|安卓开发|Android\s*开发|iOS\s*开发|"
+    r"硬件开发|固件|驱动开发|运维开发|SRE|网络工程师|算法工程师|机器学习工程师)",
+    re.I,
+)
+_TITLE_ON_ROLE = re.compile(
+    r"数据开发|数仓|数开|大数据|数据研发|数据仓库|ETL|数据工程|实时数仓|湖仓|"
+    r"Agent|智能体|RAG|大模型应用|LLM\s*应用|MCP|LangChain|AI\s*应用",
+    re.I,
+)
+
+
+def _title_off_role(snippet: str) -> bool:
+    """True when the post's head clearly names a non-target role and shows no
+    data/agent signal — used to veto lenient AI role judgments."""
+    head = (snippet or "")[:60]
+    return bool(_TITLE_OFF_ROLE.search(head)) and not _TITLE_ON_ROLE.search(head)
+
+
+def _focus_role_id(rid: str | None) -> str | None:
+    """Map an AI-returned role_id (canonical or free-form) to data|ai_app|None."""
+    r = (rid or "").strip().lower()
+    if not r:
+        return None
+    canon = canonical_role_id(r)
+    if canon in ("data", "ai_app"):
+        return canon
+    if any(m in r for m in _OFF_ROLE_MARKERS):
+        return None
+    if "data" in r:  # data_engineer, ai_data_engineer, data|ai_app …
+        # data_analyst / data_scientist are NOT data-development roles
+        if any(k in r for k in ("analyst", "scientist")):
+            return None
+        return "data"
+    if any(k in r for k in ("ai_app", "agent", "rag", "llm", "mcp", "大模型", "ai应用", "llmapp")):
+        return "ai_app"
+    return None
+
+
 def judge_post(snippet: str, *, url: str = "", cache: dict | None = None) -> PostVerdict | None:
     snip = re.sub(r"\s+", " ", (snippet or "").strip())[: post_ai_filter_max_chars()]
     if not snip:
         return PostVerdict(False, reason="empty")
     key = _post_key(url, snip)
     store = cache if cache is not None else load_cache("post_ai_filter_cache.json")
+    off_role = _title_off_role(snip)
     if key in store and isinstance(store[key], dict):
         row = store[key]
+        rid = None if off_role else _focus_role_id(str(row.get("role_id") or ""))
         return PostVerdict(
             bool(row.get("keep")),
-            canonical_role_id(str(row.get("role_id") or "")) or None,
+            rid,
             [str(t) for t in row.get("topics") or []],
             str(row.get("reason") or ""),
         )
@@ -147,7 +205,7 @@ def judge_post(snippet: str, *, url: str = "", cache: dict | None = None) -> Pos
         return None
     verdict = PostVerdict(
         bool(data.get("keep")),
-        canonical_role_id(str(data.get("role_id") or "")) or None,
+        None if off_role else _focus_role_id(str(data.get("role_id") or "")),
         [str(t) for t in (data.get("topics") or []) if t],
         str(data.get("reason") or ""),
     )

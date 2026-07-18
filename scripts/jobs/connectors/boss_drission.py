@@ -64,6 +64,7 @@ class BossDrissionConnector(JobConnector):
         self._page_wait = page_wait
         self._listen_timeout = listen_timeout
         self._page: Any = None
+        self.detail_status = "unknown"  # ok | risk_control | unknown
 
     # ------------------------------------------------------------------
     def _get_page(self):
@@ -216,25 +217,43 @@ class BossDrissionConnector(JobConnector):
 
         return JobSearchResult.ok(all_jobs, f"{len(all_jobs)} jobs via DrissionPage")
 
+    def _fetch_one_detail(self, job) -> bool:
+        """Fetch+apply one job's detail. Returns True if JD text was filled."""
+        security_id = str((job.extra or {}).get("security_id") or "").strip()
+        if not security_id:
+            return False
+        try:
+            payload = self._fetch_detail(security_id)
+            had = len(job.description or "")
+            apply_boss_detail(job, payload)
+            return len(job.description or "") > had
+        except Exception:  # noqa: BLE001
+            return False
+
     def _enrich(self, jobs: list) -> None:
+        pending = [j for j in jobs if not j.description and (j.extra or {}).get("security_id")]
+        if not pending:
+            return
+        # Preflight: probe a few details first. If the detail endpoint is
+        # risk-controlled (all probes fail), skip enrichment for the whole run
+        # rather than hammering — the list data is still saved.
+        probe_n = min(3, len(pending))
+        probe_ok = 0
+        for job in pending[:probe_n]:
+            if self._fetch_one_detail(job):
+                probe_ok += 1
+            time.sleep(random.uniform(5.0, 9.0))
+        if probe_ok == 0:
+            self.detail_status = "risk_control"
+            return
+        self.detail_status = "ok"
         fails = 0
-        for job in jobs:
-            if job.description:
-                continue
-            security_id = str((job.extra or {}).get("security_id") or "").strip()
-            if not security_id:
-                continue
-            try:
-                payload = self._fetch_detail(security_id)
-                had = len(job.description or "")
-                apply_boss_detail(job, payload)
-                fails = 0 if len(job.description or "") > had else fails + 1
-            except Exception:  # noqa: BLE001
+        for job in pending[probe_n:]:
+            if self._fetch_one_detail(job):
+                fails = 0
+            else:
                 fails += 1
             if fails >= 5:
-                # Consecutive detail failures usually mean risk-control kicked in;
-                # stop enriching rather than hammering the endpoint.
+                self.detail_status = "risk_control"
                 break
-            # 5–9s between detail fetches — detail pages trip Boss code-37 far
-            # more easily than the list endpoint.
             time.sleep(random.uniform(5.0, 9.0))

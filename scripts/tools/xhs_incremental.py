@@ -78,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         elif batch:
             est_min = max(1, int(len(batch) * pause / batch_size / 60))
             print(f"抓取 {len(batch)} 词 · 批 {batch_size} · 间隔 {pause}s · 约 {est_min} 分钟")
+            from scripts.scrape.scrape_health import NEXT_STEP_XHS_AUTH, record
             try:
                 out = run_safe_xhs_scrape(
                     batch,
@@ -87,9 +88,18 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 report["xhs"].update(out)
                 print(f"导出 → {out.get('export_path')}")
+                record("xiaohongshu", status="ok", detail="抓取成功",
+                       count=int(out.get("note_count") or 0))
             except SpiderXHSScrapeError as exc:
                 report["xhs"]["error"] = str(exc)
                 print(f"抓取失败: {exc}", file=sys.stderr)
+                auth = any(m in str(exc) for m in ("登录", "过期", "风控", "461"))
+                record(
+                    "xiaohongshu",
+                    status="auth_expired" if auth else "error",
+                    detail=str(exc)[:200],
+                    next_step=NEXT_STEP_XHS_AUTH if auth else "",
+                )
         paths = collect_xhs_export_files(max_age_days=xhs_export_max_age_days())
         report["xhs"]["note_ids_registered"] = register_xhs_note_ids(
             state,
