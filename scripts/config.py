@@ -61,6 +61,53 @@ def package_root() -> Path:
     return _PKG_ROOT
 
 
+def project_env_path() -> Path:
+    return package_root() / ".env"
+
+
+def write_project_env(updates: dict[str, str | None]) -> Path:
+    """Upsert selected keys into the project .env and mirror them into os.environ."""
+    path = project_env_path()
+    existing: list[str] = []
+    if path.is_file():
+        try:
+            existing = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            existing = []
+
+    remaining = {k: v for k, v in updates.items()}
+    out: list[str] = []
+    for line in existing:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            out.append(line)
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key not in updates:
+            out.append(line)
+            continue
+        value = remaining.pop(key)
+        if value is None:
+            continue
+        out.append(f"{key}={value}")
+
+    for key, value in remaining.items():
+        if value is not None:
+            out.append(f"{key}={value}")
+
+    text = "\n".join(out).rstrip()
+    if text:
+        text += "\n"
+    path.write_text(text, encoding="utf-8")
+
+    for key, value in updates.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    return path
+
+
 def app_display_name() -> str:
     """Label shown in Cursor browser tabs / background usage attribution."""
     return (
@@ -140,6 +187,16 @@ def xhs_cdp_enabled() -> bool:
     """Use real Chrome CDP for XHS (anti-detection). Default on; set XHS_CDP=0 for Playwright."""
     raw = os.environ.get("XHS_CDP", "1").strip().lower()
     return raw not in {"0", "false", "no", "off"}
+
+
+def xhs_driver() -> str:
+    """Preferred Xiaohongshu scrape driver: playwright first, Spider_XHS fallback."""
+    raw = os.environ.get("XHS_DRIVER", "playwright").strip().lower()
+    if raw in {"playwright", "browser"}:
+        return "playwright"
+    if raw in {"spider_xhs", "spider-xhs", "spider"}:
+        return "spider_xhs"
+    return "playwright"
 
 
 def xhs_scrape_timeout_seconds() -> int:

@@ -28,6 +28,9 @@ let jobsLoading = false;
 let jobsLoadError = "";
 let activeJobType = "all"; // "all" | "full" | "intern"
 let companyGroups = [];
+let appStatus = null;
+let demoBootstrapped = false;
+let appSettings = null;
 
 const RECENCY_WINDOW_DAYS = 90;
 const MERGED_AI_ROLE_NORMS = new Set(["ai应用开发", "agent开发", "ai/agent应用开发"]);
@@ -78,6 +81,27 @@ function payloadBase() {
     body.raw_posts = $("rawPosts").value.trim() || "examples/sample_raw_posts.json";
   }
   return body;
+}
+
+function demoPayload() {
+  const demoRoleId = canonicalRoleId(appStatus?.demo_role_id || "ai_app");
+  const role = techRoles.find((r) => canonicalRoleId(r.id) === demoRoleId);
+  return {
+    role_id: demoRoleId,
+    role: role?.search_as || appStatus?.demo_role_label || "AI 应用开发",
+    companies: [],
+    refresh: true,
+    rebuild_only: false,
+    discover_nowcoder: false,
+    discover_max_per_query: 20,
+    xhs_use_export: false,
+    xhs_priority: false,
+    xhs_live: false,
+    xhs_deep: false,
+    from_report: false,
+    raw_posts: appStatus?.sample_posts || "examples/sample_raw_posts.json",
+    agent_handoff: false,
+  };
 }
 
 function escapeHtml(s) {
@@ -330,12 +354,129 @@ function showRolePending(role) {
   $("feedError").hidden = true;
   renderCompanyChips();
   $("feedHint").hidden = false;
-  if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = `「${role.label}」暂无面经库 — 点击「构建面经库」开始`;
+  if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = `「${role.label}」暂无面经库`;
   const emptyP = $("feedEmpty").querySelector("p");
   if (emptyP) {
     emptyP.textContent = `「${role.label}」还没有已保存的面经库`;
   }
   renderCurrentView();
+}
+
+function updateHeroOnboarding(status) {
+  if (!status) return;
+  const text = $("heroModeText");
+  if (text) {
+    text.textContent = status.app_mode === "enhanced"
+      ? "已配置 AI Key，可直接使用 AI 解答、模拟面试和 JD 覆盖分析。"
+      : "默认可直接加载本地 Demo；配置 AI Key 后可启用增强能力。";
+  }
+}
+
+function updateAiConfigStatus() {
+  const el = $("aiConfigStatus");
+  if (!el) return;
+  const configured = !!appSettings?.deepseek?.configured;
+  const base = appSettings?.deepseek?.api_base || "https://api.deepseek.com";
+  const model = appSettings?.deepseek?.model || "deepseek-chat";
+  el.textContent = configured
+    ? `已配置 AI Key · ${model} · ${base}`
+    : `未配置 AI Key · 当前为基础模式`;
+  el.classList.toggle("warn", !configured);
+}
+
+function updateSourceConfigStatus() {
+  const el = $("sourceConfigStatus");
+  if (!el) return;
+  const xhs = appSettings?.sources?.xiaohongshu;
+  const boss = appSettings?.sources?.boss;
+  const parts = [
+    xhs?.configured ? `小红书已配置（${xhs.source || "env"}）` : "小红书未配置",
+    `驱动 ${xhs?.driver === "spider_xhs" ? "Spider_XHS" : "Playwright"}`,
+    boss?.configured ? "Boss 已配置 Cookie" : "Boss 未配置 Cookie",
+  ];
+  el.textContent = parts.join(" · ");
+  el.classList.toggle("warn", !xhs?.configured && !boss?.configured);
+}
+
+async function loadAppSettings() {
+  try {
+    appSettings = await getJson("/api/settings");
+    if ($("deepseekApiBase")) $("deepseekApiBase").value = appSettings.deepseek?.api_base || "https://api.deepseek.com";
+    if ($("deepseekModel")) $("deepseekModel").value = appSettings.deepseek?.model || "deepseek-chat";
+    if ($("deepseekApiKey")) $("deepseekApiKey").placeholder = appSettings.deepseek?.configured ? "已保存，留空则保持不变" : "sk-...";
+    if ($("xhsDriver")) $("xhsDriver").value = appSettings.sources?.xiaohongshu?.driver || "playwright";
+    updateAiConfigStatus();
+    updateSourceConfigStatus();
+  } catch {
+    if ($("aiConfigStatus")) {
+      $("aiConfigStatus").textContent = "无法读取 AI 配置";
+      $("aiConfigStatus").classList.add("warn");
+    }
+    if ($("sourceConfigStatus")) {
+      $("sourceConfigStatus").textContent = "无法读取平台凭证状态";
+      $("sourceConfigStatus").classList.add("warn");
+    }
+  }
+}
+
+async function saveAiSettings() {
+  const btn = $("saveAiSettings");
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = "保存中…";
+  try {
+    appSettings = await postJson("/api/settings/save", {
+      deepseek_api_key: $("deepseekApiKey")?.value || "",
+      clear_deepseek_api_key: $("clearDeepseekApiKey")?.checked || false,
+      deepseek_api_base: $("deepseekApiBase")?.value || "",
+      deepseek_model: $("deepseekModel")?.value || "",
+    });
+    if ($("deepseekApiKey")) $("deepseekApiKey").value = "";
+    if ($("clearDeepseekApiKey")) $("clearDeepseekApiKey").checked = false;
+    updateAiConfigStatus();
+    if (appStatus) {
+      appStatus.app_mode = appSettings.deepseek?.configured ? "enhanced" : "basic";
+      appStatus.app_mode_label = appSettings.deepseek?.configured ? "增强模式" : "基础模式";
+      appStatus.app_mode_message = appSettings.deepseek?.configured
+        ? "已配置 AI Key，可直接使用 AI 解答、模拟面试和 JD 覆盖分析"
+        : "未配置 AI Key，当前以本地样例和规则模式运行，仍可直接体验题库和界面";
+      updateHeroOnboarding(appStatus);
+    }
+    $("status").textContent = appSettings.deepseek?.configured ? "AI 配置已保存，当前为增强模式" : "AI 配置已更新，当前为基础模式";
+  } catch (err) {
+    $("status").textContent = `AI 配置保存失败：${humanError(err)}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "保存 AI 配置";
+  }
+}
+
+async function saveSourceSettings() {
+  const btn = $("saveSourceSettings");
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = "保存中…";
+  try {
+    appSettings = await postJson("/api/settings/save", {
+      xhs_driver: $("xhsDriver")?.value || "playwright",
+      xhs_cookies: $("xhsCookies")?.value || "",
+      clear_xhs_cookies: $("clearXhsCookies")?.checked || false,
+      boss_cookie: $("bossCookie")?.value || "",
+      clear_boss_cookie: $("clearBossCookie")?.checked || false,
+    });
+    if ($("xhsCookies")) $("xhsCookies").value = "";
+    if ($("bossCookie")) $("bossCookie").value = "";
+    if ($("clearXhsCookies")) $("clearXhsCookies").checked = false;
+    if ($("clearBossCookie")) $("clearBossCookie").checked = false;
+    updateSourceConfigStatus();
+    $("status").textContent = "平台凭证已保存";
+    await loadXhsStatus();
+  } catch (err) {
+    $("status").textContent = `平台凭证保存失败：${humanError(err)}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "保存平台凭证";
+  }
 }
 
 function applyFocusRoleFilter() {
@@ -1110,9 +1251,11 @@ async function loadLatestJobsSnapshot() {
     jobsMeta = { ...bundle.meta, slug: match.slug };
     renderCompanyChips();
   } catch (err) {
-    currentJobs = [];
-    jobsMeta = null;
-    jobsLoadError = humanJobsError(err);
+    if (!currentJobs.length) {
+      currentJobs = [];
+      jobsMeta = null;
+    }
+    jobsLoadError = `${humanJobsError(err)}${currentJobs.length ? " · 已保留当前缓存岗位" : ""}`;
   } finally {
     jobsLoading = false;
     if (viewMode === "jobs") renderJobsView();
@@ -1125,11 +1268,14 @@ async function loadXhsStatus() {
   try {
     const s = await getJson("/api/xhs/status");
     const parts = [];
+    parts.push(`主驱动 ${s.driver_preferred_label || s.driver_preferred || "Playwright"}`);
     parts.push(s.cookie_configured ? `Cookie 已配置（${s.cookie_source || "env"}）` : "Cookie 未配置（CDP Chrome 或 XHS_COOKIES）");
+    if (s.driver_preferred === "playwright" && !s.playwright_available) parts.push("未安装 Playwright");
     parts.push(`本地 JSON ${s.export_files || 0} 个`);
     if (s.latest_export_at) parts.push(`最新 ${s.latest_export_at.replace("T", " ").replace("+00:00", " UTC")}`);
     if (!s.spider_xhs_installed) parts.push("Spider_XHS 未安装");
     if (s.spider_xhs_installed && !s.node_modules_ready) parts.push("需 npm install");
+    parts.push("缓存优先，抓取失败不会清空现有结果");
     el.textContent = parts.join(" · ");
     el.classList.toggle("warn", !s.cookie_configured);
   } catch {
@@ -1155,7 +1301,7 @@ async function runXhsScrapeSafe() {
     $("xhsStatus").textContent = `JSON 已更新 ${data.keywords?.length || 0} 词：${kw}${(data.keywords?.length || 0) > 6 ? "…" : ""}`;
     await loadXhsStatus();
   } catch (err) {
-    $("xhsStatus").textContent = err.message || err.error || "抓取失败";
+    $("xhsStatus").textContent = `${err.message || err.error || "抓取失败"} · 已保留现有缓存`;
     $("xhsStatus").classList.add("warn");
   } finally {
     btn.disabled = false;
@@ -1217,7 +1363,7 @@ async function runXhsIncremental() {
     }
     closeDrawer();
   } catch (err) {
-    $("xhsStatus").textContent = err.message || err.error || "失败";
+    $("xhsStatus").textContent = `${err.message || err.error || "失败"} · 已保留现有缓存`;
     $("xhsStatus").classList.add("warn");
   } finally {
     btn.disabled = false;
@@ -1263,7 +1409,7 @@ async function runFetchJobs() {
     setViewMode("jobs");
     closeDrawer();
   } catch (err) {
-    $("jobsStatus").textContent = err.error || err.message || "拉取失败";
+    $("jobsStatus").textContent = `${err.error || err.message || "拉取失败"}${currentJobs.length ? " · 已保留当前缓存岗位" : ""}`;
   } finally {
     jobsLoading = false;
     $("submitJobs").disabled = false;
@@ -1649,7 +1795,14 @@ async function autoLoadBank() {
   $("feedError").hidden = true;
   if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = "正在加载面经库…";
   try {
-    await refreshBankList();
+    const banks = await refreshBankList();
+    if (!banks.length && appStatus?.sample_posts && !demoBootstrapped) {
+      demoBootstrapped = true;
+      if ($("heroLoadingMsg")) $("heroLoadingMsg").textContent = "首次启动，正在加载 Demo 题库…";
+      await buildDemoBank(true);
+      await loadLatestJobsSnapshot();
+      return;
+    }
     const preferredRole = techRoles.find((r) => r.id === selectedRoleId);
     if (preferredRole) {
       try {
@@ -1680,6 +1833,41 @@ async function autoLoadBank() {
     } else {
       renderCurrentView();
     }
+  }
+}
+
+async function buildDemoBank(auto = false) {
+  if (!appStatus?.sample_posts) {
+    $("status").textContent = "当前没有可用的本地 Demo 语料";
+    return;
+  }
+  const body = demoPayload();
+  selectedRoleId = canonicalRoleId(body.role_id);
+  $("role").value = body.role;
+  $("useLocalReport").checked = true;
+  $("rawPosts").value = body.raw_posts;
+  renderRoleChips($("roleChipRow"), selectRole);
+  renderRoleChips($("roleChipRowDrawer"), selectRole);
+  if ($("heroLoadingMsg")) {
+    $("heroLoadingMsg").textContent = auto ? "首次启动，正在加载 Demo 题库…" : "正在加载 Demo 题库…";
+  }
+  setLoading(true, "加载 Demo 题库…");
+  try {
+    const data = await postJson("/api/bank", body);
+    showBundle({
+      slug: data.slug,
+      bank: data.bank,
+      posts: data.posts || [],
+      companies: data.companies || [],
+      frequency_report: data.frequency_report,
+    });
+    await refreshBankList();
+    $("status").textContent = `已加载 Demo 题库：${(data.posts || []).length} 篇面经`;
+  } catch (err) {
+    $("status").textContent = `Demo 加载失败：${humanError(err)}`;
+    throw err;
+  } finally {
+    setLoading(false);
   }
 }
 
@@ -1726,6 +1914,7 @@ $("submitXhsScrape")?.addEventListener("click", runXhsScrapeSafe);
 $("submitXhsIncremental")?.addEventListener("click", runXhsIncremental);
 $("submitJobs").addEventListener("click", runFetchJobs);
 if ($("fetchJobsInline")) $("fetchJobsInline").addEventListener("click", runFetchJobs);
+if ($("heroLoadDemo")) $("heroLoadDemo").addEventListener("click", () => buildDemoBank(false));
 $("viewPosts").addEventListener("click", () => setViewMode("posts"));
 $("viewBank").addEventListener("click",  () => setViewMode("bank"));
 $("viewJobs").addEventListener("click",  () => setViewMode("jobs"));
@@ -1808,6 +1997,8 @@ $("exportJobs").addEventListener("click", () => {
 $("toggleSettings").addEventListener("click", openDrawer);
 if ($("heroOpenSettings")) $("heroOpenSettings").addEventListener("click", openDrawer);
 if ($("heroFetchJobs"))    $("heroFetchJobs").addEventListener("click", runFetchJobs);
+if ($("saveAiSettings")) $("saveAiSettings").addEventListener("click", saveAiSettings);
+if ($("saveSourceSettings")) $("saveSourceSettings").addEventListener("click", saveSourceSettings);
 
 // ── 生成备考包 ─────────────────────────────────────────────────────────────
 async function runGenPrep() {
@@ -2518,10 +2709,12 @@ async function boot() {
   }
   try {
     const s = await getJson("/api/status");
+    appStatus = s;
     if (s.sample_posts) $("rawPosts").value = s.sample_posts;
     else if (s.local_report && !s.local_report.includes("examples/")) {
       $("rawPosts").value = s.local_report;
     }
+    updateHeroOnboarding(s);
     const hintParts = [];
     if (s.local_report) {
       const name = s.local_report.split("/").pop();
@@ -2529,6 +2722,7 @@ async function boot() {
     }
     if (s.sample_posts) {
       hintParts.push(`Demo ${s.sample_post_count || 8} 篇（仅 AI 应用开发）`);
+      $("useLocalReport").checked = true;
     }
     if (hintParts.length) {
       $("localHint").textContent =
@@ -2537,6 +2731,7 @@ async function boot() {
   } catch {
     /* ignore */
   }
+  await loadAppSettings();
   await loadXhsStatus();
   await autoLoadBank();
 }

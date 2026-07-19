@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from scripts.config import cache_dir, spider_xhs_home
+from scripts.config import cache_dir, spider_xhs_home, xhs_driver
 from scripts.connectors.xiaohongshu import XiaohongshuConnector, posts_from_notes
 from scripts.scrape.normalize_xhs import normalize
 
@@ -17,6 +17,71 @@ def _export_search_dirs() -> list[Path]:
         cache_dir() / "xhs",
     ]
     return [d for d in dirs if d.is_dir()]
+
+
+def _driver_labels() -> dict[str, str]:
+    return {
+        "playwright": "Playwright + CDP Chrome",
+        "spider_xhs": "Spider_XHS",
+    }
+
+
+def _playwright_ready() -> bool:
+    from scripts.scrape.xhs_playwright_driver import playwright_available
+
+    return playwright_available()
+
+
+def _driver_order() -> list[str]:
+    preferred = xhs_driver()
+    if preferred == "spider_xhs":
+        return ["spider_xhs", "playwright"]
+    return ["playwright", "spider_xhs"]
+
+
+def _run_driver_scrape(
+    driver_name: str,
+    keywords: list[str],
+    *,
+    batch_size: int,
+    pause_seconds: float,
+    limit_keywords: bool,
+) -> dict:
+    from scripts.config import xhs_max_keywords_per_run
+
+    cleaned = [k.strip() for k in keywords if k and k.strip()]
+    if limit_keywords:
+        cleaned = cleaned[:xhs_max_keywords_per_run()]
+    if not cleaned:
+        raise ValueError("keywords required")
+
+    per_kw_pause = max(1.0, pause_seconds / max(1, batch_size))
+    if driver_name == "playwright":
+        from scripts.scrape.xhs_playwright_driver import PlaywrightXHSDriver
+
+        out = PlaywrightXHSDriver().scrape_xhs(
+            cleaned,
+            pause_seconds=per_kw_pause,
+        )
+    elif driver_name == "spider_xhs":
+        from scripts.scrape.spider_xhs_driver import SpiderXHSDriver
+
+        out = SpiderXHSDriver().scrape_xhs(
+            cleaned,
+            pause_seconds=per_kw_pause,
+        )
+    else:
+        raise ValueError(f"unsupported driver: {driver_name}")
+
+    return {
+        "ok": True,
+        "keywords": cleaned,
+        "export_path": str(out),
+        "pause_seconds": pause_seconds,
+        "batch_size": batch_size,
+        "driver": driver_name,
+        "driver_label": _driver_labels().get(driver_name, driver_name),
+    }
 
 
 def collect_xhs_export_files(
@@ -87,8 +152,12 @@ def xhs_scrape_status() -> dict:
     )
     home = spider_xhs_home()
     node_ok = (home / "node_modules").is_dir()
+    preferred = xhs_driver()
     return {
-        "driver": "spider_xhs",
+        "driver_preferred": preferred,
+        "driver_preferred_label": _driver_labels().get(preferred, preferred),
+        "driver_order": _driver_order(),
+        "playwright_available": _playwright_ready(),
         "cookie_configured": xhs_cookies_configured(),
         "cookie_source": xhs_cookies_source(),
         "spider_xhs_home": str(home),
@@ -108,9 +177,8 @@ def run_safe_xhs_scrape(
     pause_seconds: float | None = None,
     limit_keywords: bool = True,
 ) -> dict:
-    """Low-frequency Spider_XHS keyword search (CDP Chrome or XHS_COOKIES)."""
+    """Prefer browser-state Playwright, fallback to Spider_XHS when needed."""
     from scripts.config import xhs_batch_pause_seconds, xhs_cookies_configured
-    from scripts.scrape.spider_xhs_driver import SpiderXHSDriver, SpiderXHSScrapeError
 
     if not xhs_cookies_configured():
         raise ValueError(
@@ -120,24 +188,24 @@ def run_safe_xhs_scrape(
     cleaned = [k.strip() for k in keywords if k and k.strip()]
     if not cleaned:
         raise ValueError("keywords required")
-    if limit_keywords:
-        from scripts.config import xhs_max_keywords_per_run
-
-        cleaned = cleaned[:xhs_max_keywords_per_run()]
     pause = pause_seconds if pause_seconds is not None else xhs_batch_pause_seconds()
-    driver = SpiderXHSDriver()
-    out = driver.scrape_xhs(
-        cleaned,
-        pause_seconds=max(1.0, pause / max(1, batch_size)),
-    )
-    return {
-        "ok": True,
-        "keywords": cleaned,
-        "export_path": str(out),
-        "pause_seconds": pause,
-        "batch_size": batch_size,
-        "driver": "spider_xhs",
-    }
+    errors: list[str] = []
+    for driver_name in _driver_order():
+        try:
+            if driver_name == "playwright" and not _playwright_ready():
+                errors.append("Playwright 未安装")
+                continue
+            return _run_driver_scrape(
+                driver_name,
+                cleaned,
+                batch_size=batch_size,
+                pause_seconds=pause,
+                limit_keywords=limit_keywords,
+            )
+        except Exception as exc:  # noqa: BLE001 - fallback across drivers
+            errors.append(f"{driver_name}: {exc}")
+            continue
+    raise RuntimeError("；".join(errors) if errors else "小红书抓取失败")
 
 
 def run_full_xhs_scrape(

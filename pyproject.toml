@@ -34,6 +34,7 @@ dependencies = [
 dev = ["pytest>=8.3.2"]
 boss-cdp = ["websocket-client>=1.8.0"]
 xhs = ["PyExecJS>=1.5.1", "loguru>=0.7.0", "python-dotenv>=1.0.0", "retry>=0.9.2"]
+xhs-browser = ["playwright>=1.46.0"]
 
 [project.scripts]
 interview-radar = "scripts.run:main"
@@ -44,7 +45,7 @@ interview-radar-jobs = "scripts.run_jobs:main"
 [project.urls]
 Homepage = "https://github.com/Nikka-ops/-"
 Repository = "https://github.com/Nikka-ops/-"
-Issues = "https://github.com/KunChen1110/InterviewRadar/issues"
+Issues = "https://github.com/Nikka-ops/-/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

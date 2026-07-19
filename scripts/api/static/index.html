@@ -117,7 +117,7 @@
     <div class="drawer-backdrop" id="drawerBackdrop"></div>
     <div class="drawer-panel">
       <div class="drawer-head">
-        <h2>构建 / 切换题库</h2>
+        <h2>配置 / 数据源</h2>
         <button id="closeSettings" type="button" class="icon-btn">×</button>
       </div>
       <div class="field-group">
@@ -128,12 +128,48 @@
           <input id="role" type="text" value="数据开发" placeholder="输入其他岗位…" />
         </label>
       </div>
+      <details class="advanced" open>
+        <summary>AI 配置</summary>
+        <p id="aiConfigStatus" class="status">读取配置中…</p>
+        <p class="hint">保存到项目 `.env`，当前页面即可生效。</p>
+        <label>DeepSeek API Key
+          <input id="deepseekApiKey" type="password" placeholder="sk-..." autocomplete="off" />
+        </label>
+        <label class="check"><input id="clearDeepseekApiKey" type="checkbox" /> 清空已保存的 API Key</label>
+        <label>API Base
+          <input id="deepseekApiBase" type="text" value="https://api.deepseek.com" />
+        </label>
+        <label>模型
+          <input id="deepseekModel" type="text" value="deepseek-chat" />
+        </label>
+        <button id="saveAiSettings" type="button" class="ghost block">保存 AI 配置</button>
+      </details>
+      <details class="advanced">
+        <summary>平台凭证</summary>
+        <p id="sourceConfigStatus" class="status">读取配置中…</p>
+        <p class="hint">小红书主抓取建议优先用真实 Chrome 会话；Spider_XHS 作为兼容回退，不建议作为唯一主链路。</p>
+        <label>小红书驱动
+          <select id="xhsDriver">
+            <option value="playwright">Playwright + CDP Chrome</option>
+            <option value="spider_xhs">Spider_XHS</option>
+          </select>
+        </label>
+        <label>小红书 Cookies
+          <textarea id="xhsCookies" rows="3" placeholder="可粘贴完整 Cookie 字符串；仅在需要抓取小红书时配置"></textarea>
+        </label>
+        <label class="check"><input id="clearXhsCookies" type="checkbox" /> 清空已保存的小红书 Cookies</label>
+        <label>Boss Cookie
+          <textarea id="bossCookie" rows="3" placeholder="可粘贴 Boss Cookie；如果主要走已登录 CDP Chrome，可不填"></textarea>
+        </label>
+        <label class="check"><input id="clearBossCookie" type="checkbox" /> 清空已保存的 Boss Cookie</label>
+        <button id="saveSourceSettings" type="button" class="ghost block">保存平台凭证</button>
+      </details>
       <label>意向公司（逗号分隔）<input id="companies" type="text" placeholder="字节跳动, 美团" /></label>
       <label>简历摘要（可选，用于生成追问链）<textarea id="resumeText" rows="4" placeholder="粘贴简历中与目标岗位最相关的项目/技能描述（200字内）…" style="width:100%;box-sizing:border-box;margin-top:4px;font-size:.9em;resize:vertical"></textarea></label>
-      <details class="advanced" open>
-        <summary>数据源</summary>
-        <details class="advanced" open>
-          <summary>小红书面经（主数据源）</summary>
+      <details class="advanced" id="advancedTools">
+        <summary>联网抓取与岗位 JD</summary>
+        <details class="advanced">
+          <summary>小红书面经</summary>
           <p class="hint warn-hint">主源：小红书（专用 Chrome CDP 或 Cookie）。默认抓取<strong>近 3 个月</strong>面经；图片帖自动 OCR。批间约 30s，不必等数小时。</p>
           <p id="xhsStatus" class="status"></p>
           <button id="submitXhsIncremental" type="button" class="primary block">抓取小红书并入库</button>
@@ -145,7 +181,7 @@
           <label class="check"><input id="xhsLive" type="checkbox" /> 构建时联网重抓小红书（高风险，勿勾）</label>
         </details>
         <details class="advanced">
-          <summary>牛客面经（补充源）</summary>
+          <summary>牛客面经</summary>
           <label class="check"><input id="discoverNowcoder" type="checkbox" /> 联网发现牛客面经</label>
           <label>每个搜索词最多
             <input id="discoverMax" type="number" min="5" max="80" value="50" style="width:4rem" />
@@ -154,13 +190,13 @@
           <label class="check"><input id="refresh" type="checkbox" /> 强制刷新（忽略 7 天缓存，重新联网抓）</label>
         </details>
         <details class="advanced">
-          <summary>其他本地语料</summary>
+          <summary>本地语料</summary>
           <label class="check"><input id="useLocalReport" type="checkbox" /> 使用本地语料</label>
           <label>语料路径<input id="rawPosts" type="text" value="examples/sample_raw_posts.json" /></label>
           <p id="localHint" class="hint"></p>
         </details>
         <details class="advanced">
-          <summary>在招岗位 JD（数据开发 + Agent）</summary>
+          <summary>在招岗位 JD</summary>
           <p class="hint">仅保留与「数据开发/数仓」「Agent 开发」相关的岗位；官网 JD 默认近 3 个月</p>
           <label>招聘渠道
             <select id="jobProScope">
@@ -218,6 +254,7 @@
     <!-- ③ 首页 Hero（未加载数据时） -->
     <div id="feedHint" class="feed-hint-hero">
       <p class="hero-loading" id="heroLoadingMsg">正在加载面经库…</p>
+      <p class="hero-status-line" id="heroModeText">默认可直接加载本地 Demo；配置 AI Key 后可启用增强能力。</p>
       <div class="hero-feature-grid">
         <div class="hero-card" id="heroCardPosts" onclick="document.getElementById('toggleSettings').click()">
           <div class="hero-card-icon">
@@ -256,7 +293,10 @@
           </div>
         </div>
       </div>
-      <button type="button" class="primary hero-cta" id="heroOpenSettings">构建面经库</button>
+      <div class="hero-cta-row">
+        <button type="button" class="primary hero-cta" id="heroLoadDemo">一键加载 Demo 题库</button>
+        <button type="button" class="ghost hero-cta-secondary" id="heroOpenSettings">配置数据源</button>
+      </div>
     </div>
 
     <div id="feedEmpty" class="feed-empty" hidden>
@@ -274,12 +314,12 @@
           <p class="mock-setup-desc">填写技术背景，AI 面试官从题库挑选最匹配的题目，并结合你的项目经验追问。</p>
           <label class="mock-label">你的技术背景 / 简历摘要</label>
           <div class="mock-resume-row">
-            <label class="mock-resume-btn" for="mockResumeFile">导入简历（PDF / 图片 / TXT）</label>
+            <label class="mock-resume-btn" for="mockResumeFile">导入简历（文本 PDF / 图片 / TXT）</label>
             <input type="file" id="mockResumeFile" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" hidden>
             <span class="mock-resume-status" id="mockResumeStatus"></span>
           </div>
           <textarea id="mockBackground" class="mock-bg-input" rows="5"
-            placeholder="例：3 年数仓经验，熟悉 Spark / Hive，搭过实时数仓（Flink），最近在做 RAG 项目，用 LangChain + Milvus。或点上方「导入简历」自动填充。"></textarea>
+            placeholder="例：3 年数仓经验，熟悉 Spark / Hive，搭过实时数仓（Flink），最近在做 RAG 项目，用 LangChain + Milvus。或点上方「导入简历」自动填充（扫描版 PDF 建议先转图片）。"></textarea>
           <div class="mock-setup-meta">
             <span class="mock-hint" id="mockBankStatus">题库未加载</span>
             <button class="primary" id="startMockBtn">开始面试</button>
