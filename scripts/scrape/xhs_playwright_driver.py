@@ -113,7 +113,10 @@ class PlaywrightXHSDriver:
                         captured: list[dict] = []
 
                         def _on_response(resp) -> None:
-                            if "/api/sns/web/v1/search/notes" not in resp.url:
+                            # XHS moved the search API to so.xiaohongshu.com and v2;
+                            # match on the stable "search/notes" path so both the old
+                            # (edith/v1) and new (so/v2) endpoints are captured.
+                            if "search/notes" not in resp.url:
                                 return
                             try:
                                 payload = resp.json()
@@ -131,11 +134,10 @@ class PlaywrightXHSDriver:
 
                         page.on("response", _on_response)
                         page.goto(_search_url(keyword), wait_until="domcontentloaded", timeout=30000)
-                        page.wait_for_timeout(3500)
-                        page.mouse.wheel(0, 2500)
-                        page.wait_for_timeout(1500)
-                        page.mouse.wheel(0, 2500)
-                        page.wait_for_timeout(1500)
+                        page.wait_for_timeout(4000)
+                        for _ in range(3):
+                            page.mouse.wheel(0, 3000)
+                            page.wait_for_timeout(2000)
                         page.remove_listener("response", _on_response)
 
                         notes = captured[:per_kw]
