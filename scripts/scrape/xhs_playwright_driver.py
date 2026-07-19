@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import random
 import time
 from datetime import date
 from pathlib import Path
@@ -14,6 +15,28 @@ from scripts.scrape.spider_xhs_normalize import note_from_search_item
 
 class PlaywrightXHSScrapeError(RuntimeError):
     pass
+
+
+class XHSCaptchaError(PlaywrightXHSScrapeError):
+    """Raised when XHS shows a human-verification challenge (rate/behaviour based)."""
+
+
+def _has_captcha(page) -> bool:
+    """Detect XHS's verify/slider challenge so the run stops instead of hammering."""
+    try:
+        return bool(page.evaluate(
+            """
+            () => {
+              if (/verify|captcha|security/i.test(location.href)) return true;
+              const sel = '.captcha, .verify-wrapper, [class*="captcha"], [class*="verify"], .red-captcha';
+              if (document.querySelector(sel)) return true;
+              const t = document.body ? document.body.innerText : '';
+              return /滑动|拖动|完成验证|安全验证|请完成|验证码/.test(t) && t.length < 400;
+            }
+            """
+        ))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def playwright_available() -> bool:
@@ -108,7 +131,10 @@ class PlaywrightXHSDriver:
                 try:
                     for i, keyword in enumerate(cleaned):
                         if i and pause_seconds > 0:
-                            time.sleep(pause_seconds)
+                            # Human-like jitter: never a fixed cadence. A real user
+                            # doesn't search on a metronome — randomising the gap is
+                            # what keeps the behavioural (captcha) detector quiet.
+                            time.sleep(pause_seconds + random.uniform(0, pause_seconds))
 
                         captured: list[dict] = []
 
@@ -135,9 +161,19 @@ class PlaywrightXHSDriver:
                         page.on("response", _on_response)
                         page.goto(_search_url(keyword), wait_until="domcontentloaded", timeout=30000)
                         page.wait_for_timeout(4000)
+                        # Stop the whole run the moment a captcha appears — hammering
+                        # more keywords only deepens the block. Keep what we have.
+                        if _has_captcha(page):
+                            page.remove_listener("response", _on_response)
+                            if merged:
+                                break
+                            raise XHSCaptchaError(
+                                "小红书弹出人机验证（频率触发）。请在专用 Chrome 手动完成验证，"
+                                "并降低抓取频次/单次词数后重试。"
+                            )
                         for _ in range(3):
-                            page.mouse.wheel(0, 3000)
-                            page.wait_for_timeout(2000)
+                            page.mouse.wheel(0, random.randint(2200, 3400))
+                            page.wait_for_timeout(random.randint(1500, 2600))
                         page.remove_listener("response", _on_response)
 
                         notes = captured[:per_kw]
