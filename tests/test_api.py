@@ -632,7 +632,7 @@ def test_run_config_from_args_preserves_role_id():
     )
     config = _config_from_args(args)
     assert config.role_id == "ai_app"
-    assert config.role == "AI 应用开发"
+    assert config.role == "Agent 开发"
 
 # --- test_agent_handoff.py ---
 
