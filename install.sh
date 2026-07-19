@@ -4,33 +4,27 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+# Pick a Python >= 3.11; fail early with a clear message otherwise.
 choose_python() {
-  if command -v python3.11 >/dev/null 2>&1; then
-    printf '%s\n' "python3.11"
-    return 0
-  fi
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "Python 3.11+ is required but python3 was not found." >&2
-    return 1
-  fi
-  if ! python3 - <<'PY'
-import sys
-raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
-PY
-  then
-    echo "Python 3.11+ is required. Found: $(python3 --version 2>&1)" >&2
-    return 1
-  fi
-  printf '%s\n' "python3"
+  for py in python3.13 python3.12 python3.11 python3 python; do
+    if command -v "$py" >/dev/null 2>&1; then
+      if "$py" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 11) else 1)' 2>/dev/null; then
+        echo "$py"; return 0
+      fi
+    fi
+  done
+  have="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo none)"
+  echo "✗ 需要 Python >= 3.11，但当前只找到 $have。请先安装 Python 3.11+（https://www.python.org/downloads/）后重试。" >&2
+  return 1
 }
 
-PYTHON_BIN="$(choose_python)"
-
 if [[ ! -d .venv ]]; then
-  echo "Creating .venv …"
+  PYTHON_BIN="$(choose_python)" || exit 1
+  echo "Creating .venv with $PYTHON_BIN …"
   "$PYTHON_BIN" -m venv .venv
 fi
 
+# Validate an existing .venv too — a stale 3.9/3.10 venv would fail later.
 if ! .venv/bin/python - <<'PY'
 import sys
 raise SystemExit(0 if sys.version_info >= (3, 11) else 1)

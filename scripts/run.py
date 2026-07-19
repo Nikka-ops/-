@@ -14,7 +14,7 @@ from scripts.corpus.tech_roles import resolve_role_label
 def _config_from_args(args: argparse.Namespace) -> RunConfig:
     return RunConfig(
         role=resolve_role_label(getattr(args, "role_id", "") or None, args.role),
-        role_id=args.role_id,
+        role_id=getattr(args, "role_id", "") or "",
         companies=args.companies,
         resume_path=args.resume,
         resume_text=args.resume_text,

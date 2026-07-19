@@ -46,6 +46,16 @@ def write_snapshot(
     jobs_path = snap_dir / "jobs.json"
     meta_path = snap_dir / "meta.json"
 
+    # Guard: never let an empty/collapsed scrape (risk-control, network hiccup)
+    # overwrite a healthy snapshot. A near-empty result replacing a populated one
+    # is almost always a failed fetch, not "the market emptied out".
+    prior_count = len(_load_prior_ids(jobs_path if jobs_path.is_file() else None))
+    if not jobs and prior_count > 0:
+        raise ValueError(
+            f"refusing to overwrite {slug}: fetched 0 jobs but snapshot has {prior_count} "
+            "(likely a failed fetch / risk-control); keeping existing data"
+        )
+
     prior_ids = _load_prior_ids(jobs_path if jobs_path.is_file() else None)
     for job in jobs:
         fp = job.fingerprint()

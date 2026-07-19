@@ -285,7 +285,7 @@ def ingest_posts(config: RunConfig, queries: list[str]) -> tuple[list[RawPost], 
         if explicit_raw:
             raise FileNotFoundError(
                 f"语料文件无有效正文或为空：{config.raw_posts}。"
-                "请检查路径、格式，或换用与岗位「{config.role}」匹配的 JSON。"
+                f"请检查路径、格式，或换用与岗位「{config.role}」匹配的 JSON。"
             )
         fallback_path = resolve_role_aware_fallback(config.role)
         if fallback_path:
