@@ -383,6 +383,11 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
 
         return 200, read_progress()
 
+    if method == "GET" and route == "/api/scrape/health":
+        from scripts.scrape.scrape_health import summary
+
+        return 200, {"sources": summary()}
+
     if method == "GET" and route == "/api/daily/status":
         from scripts.scrape.schedule_info import daily_schedule_status
 

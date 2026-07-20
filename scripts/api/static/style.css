@@ -2118,3 +2118,24 @@ footer {
 .scrape-progress-text {
   font-size: 12px; color: var(--text-2); font-weight: 600;
 }
+
+/* ══════════════════════════════════════════════
+   数据源健康看板
+══════════════════════════════════════════════ */
+.health-panel { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.health-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  font-size: 12px; line-height: 1.45;
+  border: 1px solid var(--border);
+}
+.health-item.ok      { background: var(--green-soft); border-color: transparent; }
+.health-item.warn    { background: var(--amber-soft); }
+.health-item.err     { background: var(--red-soft); }
+.health-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; }
+.health-item.ok   .health-dot { background: var(--green); }
+.health-item.warn .health-dot { background: var(--amber); }
+.health-item.err  .health-dot { background: var(--red); }
+.health-src { font-weight: 700; color: var(--text); }
+.health-msg { color: var(--text-2); }
+.health-next { display: block; margin-top: 3px; color: var(--text-2); font-weight: 600; }

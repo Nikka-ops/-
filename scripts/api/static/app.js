@@ -1975,8 +1975,40 @@ async function runBuildBank() {
   }
 }
 
-function openDrawer() { $("settingsDrawer").hidden = false; }
+function openDrawer() { $("settingsDrawer").hidden = false; loadHealthPanel(); }
 function closeDrawer() { $("settingsDrawer").hidden = true; }
+
+// ── 数据源健康看板 ────────────────────────────────
+const _SRC_LABEL = { xiaohongshu: "小红书", boss: "Boss 直聘", nowcoder: "牛客" };
+const _STATUS_CLASS = { ok: "ok", partial: "warn", risk_control: "warn", auth_expired: "err", empty: "warn", error: "err" };
+const _STATUS_TEXT = {
+  ok: "正常", partial: "部分成功", risk_control: "触发风控",
+  auth_expired: "登录失效", empty: "无结果", error: "出错",
+};
+async function loadHealthPanel() {
+  const panel = $("healthPanel");
+  if (!panel) return;
+  try {
+    const { sources } = await getJson("/api/scrape/health");
+    const entries = Object.entries(sources || {});
+    if (!entries.length) { panel.hidden = true; return; }
+    panel.hidden = false;
+    panel.innerHTML = entries.map(([src, h]) => {
+      const cls = _STATUS_CLASS[h.status] || "warn";
+      const label = _SRC_LABEL[src] || src;
+      const st = _STATUS_TEXT[h.status] || h.status || "";
+      const when = h.at ? `（${String(h.at).slice(5, 16).replace("T", " ")}）` : "";
+      const next = h.next_step ? `<span class="health-next">→ ${escapeHtml(h.next_step)}</span>` : "";
+      return `<div class="health-item ${cls}">
+        <span class="health-dot"></span>
+        <span><span class="health-src">${escapeHtml(label)}</span>
+          <span class="health-msg">${escapeHtml(st)}${when} ${escapeHtml(h.detail || "")}</span>${next}</span>
+      </div>`;
+    }).join("");
+  } catch {
+    panel.hidden = true;
+  }
+}
 
 function downloadBlob(filename, content, type) {
   const blob = new Blob([content], { type });
