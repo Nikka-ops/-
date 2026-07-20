@@ -97,6 +97,39 @@ class PlaywrightXHSDriver:
     def output_dir(self) -> Path:
         return _browser_output_dir()
 
+    @staticmethod
+    def _is_high_value(note: dict) -> bool:
+        """面经-like title AND a truncated desc (=there's more body to fetch)."""
+        title = str(note.get("title") or "")
+        desc = str(note.get("desc") or "")
+        looks_recap = any(k in (title + desc) for k in ("面经", "面试", "一面", "二面", "凉经", "拷打"))
+        return looks_recap and len(desc) >= 490  # hit the 500 search-desc cap
+
+    def _supplement_details(self, page, notes: list[dict]) -> None:
+        """Visit up to detail_cap high-value notes and replace desc with full body.
+        Captcha-guarded + jittered; abort detail phase (not the run) on captcha."""
+        targets = [n for n in notes if self._is_high_value(n)][: self._detail_cap]
+        for n in targets:
+            url = str(n.get("note_url") or "")
+            if not url:
+                continue
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                page.wait_for_timeout(random.randint(1800, 3000))
+                if _has_captcha(page):
+                    return  # stop detail phase, keep search-stage data
+                body = page.evaluate(
+                    """() => {
+                        const el = document.querySelector('#detail-desc, .note-content, .desc, [class*="note-text"]');
+                        return el ? (el.innerText || '').trim() : '';
+                    }"""
+                )
+                if body and len(body) > len(str(n.get("desc") or "")):
+                    n["desc"] = body[:4000]
+            except Exception:  # noqa: BLE001
+                continue
+            page.wait_for_timeout(random.randint(4000, 8000))  # detail 间限速
+
     def scrape_xhs(
         self,
         keywords: list[str],
@@ -104,8 +137,13 @@ class PlaywrightXHSDriver:
         require_num_per_keyword: int | None = None,
         pause_seconds: float = 2.0,
         fetch_detail: bool = False,
+        detail_cap: int = 3,
     ) -> Path:
-        del fetch_detail  # Browser mode only captures search-stage note cards.
+        # fetch_detail (opt-in, off by default): after the search stage, visit a
+        # few HIGH-VALUE notes (面经 title + truncated desc) to grab full body.
+        # Higher captcha risk (same as Boss detail) — kept small + captcha-guarded.
+        self._fetch_detail = fetch_detail
+        self._detail_cap = detail_cap
         if not playwright_available():
             raise PlaywrightXHSScrapeError(
                 "未安装 Playwright。请执行 pip install playwright 并安装浏览器依赖。"
@@ -129,7 +167,13 @@ class PlaywrightXHSDriver:
                 context = browser.contexts[0] if browser.contexts else browser.new_context()
                 page = context.new_page()
                 try:
+                    from scripts.scrape.scrape_progress import set_progress
                     for i, keyword in enumerate(cleaned):
+                        set_progress(
+                            "scraping",
+                            f"抓取小红书：{keyword}（第 {i + 1}/{len(cleaned)} 词，已得 {len(merged)} 篇）",
+                            current=i + 1, total=len(cleaned),
+                        )
                         if i and pause_seconds > 0:
                             # Human-like jitter: never a fixed cadence. A real user
                             # doesn't search on a metronome — randomising the gap is
@@ -179,12 +223,18 @@ class PlaywrightXHSDriver:
                         notes = captured[:per_kw]
                         if not notes:
                             notes = _extract_dom_cards(page)[:per_kw]
+                        new_notes = []
                         for note in notes:
                             note_id = str(note.get("note_id") or "").strip()
                             if not note_id or note_id in seen_ids:
                                 continue
                             seen_ids.add(note_id)
                             merged.append(note)
+                            new_notes.append(note)
+
+                        # 可选:对本词的高价值帖补详情(小批量、验证码保护)
+                        if getattr(self, "_fetch_detail", False):
+                            self._supplement_details(page, new_notes)
                 finally:
                     page.close()
         except (PlaywrightError, PlaywrightTimeoutError) as exc:

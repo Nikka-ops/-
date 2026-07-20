@@ -189,6 +189,13 @@ def xhs_cdp_enabled() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def xhs_fetch_detail() -> bool:
+    """Opt-in: visit a few high-value 面经 notes for full body (higher risk).
+    Default off — the search-stage data + OCR covers most posts safely."""
+    raw = os.environ.get("XHS_FETCH_DETAIL", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def xhs_driver() -> str:
     """Preferred Xiaohongshu scrape driver: playwright first, Spider_XHS fallback."""
     raw = os.environ.get("XHS_DRIVER", "playwright").strip().lower()

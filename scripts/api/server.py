@@ -378,6 +378,16 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
 
         return 200, xhs_scrape_status()
 
+    if method == "GET" and route == "/api/scrape/progress":
+        from scripts.scrape.scrape_progress import read_progress
+
+        return 200, read_progress()
+
+    if method == "GET" and route == "/api/scrape/health":
+        from scripts.scrape.scrape_health import summary
+
+        return 200, {"sources": summary()}
+
     if method == "GET" and route == "/api/daily/status":
         from scripts.scrape.schedule_info import daily_schedule_status
 
@@ -879,9 +889,12 @@ def handle_request(method: str, path: str, body: dict | None = None) -> tuple[in
         bank_body["xhs_deep"] = bool(data.get("xhs_deep", True))
         bank_body["xhs_priority"] = bool(data.get("xhs_priority", True))
         bank_body["discover_nowcoder"] = bool(data.get("discover_nowcoder", False))
+        from scripts.scrape.scrape_progress import set_progress, clear_progress
         try:
+            set_progress("building", "AI 过滤、提题聚类、生成解答中…")
             config = _config_from_body(bank_body, default_agent_handoff=False)
             pipeline = run_pipeline(config)
+            clear_progress()
             payload = pipeline.to_dict()
             bundle = load_bank_bundle(Path(config.cache_dir), pipeline.slug)
             if bundle:

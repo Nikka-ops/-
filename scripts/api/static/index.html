@@ -34,6 +34,7 @@
         <input id="searchQ" type="search" placeholder="搜索面经、公司…（近 3 个月）" autocomplete="off" />
         <button id="clearSearch" type="button" class="clear-btn" hidden aria-label="清空">×</button>
       </div>
+      <button id="themeToggle" type="button" class="icon-btn" title="切换深色/浅色">🌙</button>
       <button id="toggleSettings" type="button" class="build-btn" title="选择岗位/范围并构建题库"><span class="build-btn-icon">⚙</span>构建题库</button>
     </div>
     <div class="role-bar">
@@ -64,6 +65,12 @@
       </div>
     </div>
   </header>
+
+  <!-- 抓取/构建进度 -->
+  <div id="scrapeProgress" class="scrape-progress" hidden>
+    <div class="scrape-progress-track"><div id="scrapeProgressFill" class="scrape-progress-fill"></div></div>
+    <span id="scrapeProgressText" class="scrape-progress-text"></span>
+  </div>
 
   <!-- 题目详情抽屉 -->
   <div id="questionDrawer" class="drawer drawer-right" hidden>
@@ -120,6 +127,7 @@
         <h2>配置 / 数据源</h2>
         <button id="closeSettings" type="button" class="icon-btn">×</button>
       </div>
+      <div id="healthPanel" class="health-panel" hidden></div>
       <div class="field-group">
         <span class="field-label">目标岗位</span>
         <div id="roleChipRowDrawer" class="role-grid"></div>

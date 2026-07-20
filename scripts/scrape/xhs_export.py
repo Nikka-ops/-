@@ -57,11 +57,13 @@ def _run_driver_scrape(
 
     per_kw_pause = max(1.0, pause_seconds / max(1, batch_size))
     if driver_name == "playwright":
+        from scripts.config import xhs_fetch_detail
         from scripts.scrape.xhs_playwright_driver import PlaywrightXHSDriver
 
         out = PlaywrightXHSDriver().scrape_xhs(
             cleaned,
             pause_seconds=per_kw_pause,
+            fetch_detail=xhs_fetch_detail(),
         )
     elif driver_name == "spider_xhs":
         from scripts.scrape.spider_xhs_driver import SpiderXHSDriver

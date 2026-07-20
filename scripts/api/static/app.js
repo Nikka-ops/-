@@ -1,5 +1,69 @@
 const $ = (id) => document.getElementById(id);
 
+// ── 抓取/构建进度轮询 ─────────────────────────────
+let _progressTimer = null;
+function _updateProgressUI(p) {
+  const el = document.getElementById("scrapeProgress");
+  const fill = document.getElementById("scrapeProgressFill");
+  const txt = document.getElementById("scrapeProgressText");
+  if (!el) return;
+  el.hidden = false;
+  if (txt) txt.textContent = p.message || "处理中…";
+  if (fill) {
+    if (p.pct > 0) {
+      fill.classList.remove("indeterminate");
+      fill.style.width = p.pct + "%";
+    } else {
+      fill.classList.add("indeterminate");   // 无确定进度 → 流动动画
+    }
+  }
+}
+async function startProgressPolling() {
+  stopProgressPolling();
+  const poll = async () => {
+    try {
+      const p = await getJson("/api/scrape/progress");
+      _updateProgressUI(p);
+      if (!p.active && p.phase !== "scraping" && p.phase !== "building") stopProgressPolling();
+    } catch { /* ignore transient */ }
+  };
+  await poll();
+  _progressTimer = setInterval(poll, 1500);
+}
+function stopProgressPolling() {
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+  const el = document.getElementById("scrapeProgress");
+  if (el) el.hidden = true;
+}
+
+// ── 主题(深/浅)──────────────────────────────────
+function applyTheme(theme) {
+  // theme: 'dark' | 'light' | null(跟随系统)
+  const root = document.documentElement;
+  if (theme === "dark" || theme === "light") root.setAttribute("data-theme", theme);
+  else root.removeAttribute("data-theme");
+  const btn = document.getElementById("themeToggle");
+  const isDark = theme === "dark" ||
+    (!theme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  if (btn) btn.textContent = isDark ? "☀️" : "🌙";
+}
+(function initTheme() {
+  applyTheme(localStorage.getItem("ir_theme"));
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    applyTheme(localStorage.getItem("ir_theme"));
+    btn.addEventListener("click", () => {
+      const cur = document.documentElement.getAttribute("data-theme");
+      const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      // 循环:跟随系统 → 反向 → 记忆
+      const next = cur === "dark" ? "light" : cur === "light" ? "dark" : (sysDark ? "light" : "dark");
+      localStorage.setItem("ir_theme", next);
+      applyTheme(next);
+    });
+  });
+})();
+
 let currentBank = null;
 let currentPosts = [];
 let currentClusters = [];
@@ -1338,6 +1402,7 @@ async function runXhsIncremental() {
   if (!btn) return;
   btn.disabled = true;
   setLoading(true, "抓取 + 分类入库…");
+  startProgressPolling();
   try {
     const body = {
       ...payloadBase(),
@@ -1379,6 +1444,7 @@ async function runXhsIncremental() {
   } finally {
     btn.disabled = false;
     setLoading(false);
+    stopProgressPolling();
     await loadXhsStatus();
   }
 }
@@ -1469,8 +1535,41 @@ function closeQuestionDrawer() {
   _qdCurrentQ = null;
 }
 
+// 轻量 markdown 渲染(先转义 HTML,再套格式;代码块/行内码/加粗/列表)
+function renderAnswerMarkdown(text) {
+  const raw = String(text || "");
+  // 先抽出代码块占位,避免内部内容被后续规则破坏
+  const blocks = [];
+  let s = raw.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const i = blocks.length;
+    blocks.push(`<pre class="qd-code"><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`);
+    return ` B${i} `;
+  });
+  s = escapeHtml(s);
+  s = s.replace(/`([^`]+)`/g, (_, c) => `<code class="qd-inline-code">${c}</code>`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // 行级:列表 vs 段落
+  const lines = s.split("\n");
+  const out = [];
+  let inList = false;
+  for (const ln of lines) {
+    const t = ln.trim();
+    if (/^([-•*]|\d+[.、)])\s+/.test(t)) {
+      if (!inList) { out.push("<ul class='qd-list'>"); inList = true; }
+      out.push(`<li>${t.replace(/^([-•*]|\d+[.、)])\s+/, "")}</li>`);
+    } else {
+      if (inList) { out.push("</ul>"); inList = false; }
+      if (t) out.push(`<p>${t}</p>`);
+    }
+  }
+  if (inList) out.push("</ul>");
+  let html = out.join("");
+  html = html.replace(/ B(\d+) /g, (_, i) => blocks[Number(i)] || "");
+  return html;
+}
+
 function _qdShowAnswer(data) {
-  $("qdAnswer").textContent  = data.answer || "";
+  $("qdAnswer").innerHTML     = renderAnswerMarkdown(data.answer || "");
   $("qdKeyPoints").innerHTML = (data.key_points || [])
     .map((k) => `<span class="qd-keypoint-chip">${escapeHtml(k)}</span>`)
     .join("");
@@ -1909,8 +2008,40 @@ async function runBuildBank() {
   }
 }
 
-function openDrawer() { $("settingsDrawer").hidden = false; }
+function openDrawer() { $("settingsDrawer").hidden = false; loadHealthPanel(); }
 function closeDrawer() { $("settingsDrawer").hidden = true; }
+
+// ── 数据源健康看板 ────────────────────────────────
+const _SRC_LABEL = { xiaohongshu: "小红书", boss: "Boss 直聘", nowcoder: "牛客" };
+const _STATUS_CLASS = { ok: "ok", partial: "warn", risk_control: "warn", auth_expired: "err", empty: "warn", error: "err" };
+const _STATUS_TEXT = {
+  ok: "正常", partial: "部分成功", risk_control: "触发风控",
+  auth_expired: "登录失效", empty: "无结果", error: "出错",
+};
+async function loadHealthPanel() {
+  const panel = $("healthPanel");
+  if (!panel) return;
+  try {
+    const { sources } = await getJson("/api/scrape/health");
+    const entries = Object.entries(sources || {});
+    if (!entries.length) { panel.hidden = true; return; }
+    panel.hidden = false;
+    panel.innerHTML = entries.map(([src, h]) => {
+      const cls = _STATUS_CLASS[h.status] || "warn";
+      const label = _SRC_LABEL[src] || src;
+      const st = _STATUS_TEXT[h.status] || h.status || "";
+      const when = h.at ? `（${String(h.at).slice(5, 16).replace("T", " ")}）` : "";
+      const next = h.next_step ? `<span class="health-next">→ ${escapeHtml(h.next_step)}</span>` : "";
+      return `<div class="health-item ${cls}">
+        <span class="health-dot"></span>
+        <span><span class="health-src">${escapeHtml(label)}</span>
+          <span class="health-msg">${escapeHtml(st)}${when} ${escapeHtml(h.detail || "")}</span>${next}</span>
+      </div>`;
+    }).join("");
+  } catch {
+    panel.hidden = true;
+  }
+}
 
 function downloadBlob(filename, content, type) {
   const blob = new Blob([content], { type });
