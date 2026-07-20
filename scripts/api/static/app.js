@@ -1,5 +1,33 @@
 const $ = (id) => document.getElementById(id);
 
+// ── 主题(深/浅)──────────────────────────────────
+function applyTheme(theme) {
+  // theme: 'dark' | 'light' | null(跟随系统)
+  const root = document.documentElement;
+  if (theme === "dark" || theme === "light") root.setAttribute("data-theme", theme);
+  else root.removeAttribute("data-theme");
+  const btn = document.getElementById("themeToggle");
+  const isDark = theme === "dark" ||
+    (!theme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  if (btn) btn.textContent = isDark ? "☀️" : "🌙";
+}
+(function initTheme() {
+  applyTheme(localStorage.getItem("ir_theme"));
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("themeToggle");
+    if (!btn) return;
+    applyTheme(localStorage.getItem("ir_theme"));
+    btn.addEventListener("click", () => {
+      const cur = document.documentElement.getAttribute("data-theme");
+      const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      // 循环:跟随系统 → 反向 → 记忆
+      const next = cur === "dark" ? "light" : cur === "light" ? "dark" : (sysDark ? "light" : "dark");
+      localStorage.setItem("ir_theme", next);
+      applyTheme(next);
+    });
+  });
+})();
+
 let currentBank = null;
 let currentPosts = [];
 let currentClusters = [];

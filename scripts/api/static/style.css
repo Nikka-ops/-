@@ -51,9 +51,13 @@
   --transition: 0.18s cubic-bezier(.4,0,.2,1);
 }
 
-/* dark mode */
+/* dark palette — shared by explicit toggle and OS-auto default */
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) {
+  /* placeholder, overridden below */
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg:        #111;
     --surface:   #1c1c1e;
     --surface-2: #242426;
@@ -73,6 +77,27 @@
     --shadow-md: 0 6px 20px rgba(0,0,0,.5);
     --shadow-lg: 0 16px 48px rgba(0,0,0,.6);
   }
+}
+/* explicit dark (toggle) — wins regardless of OS */
+:root[data-theme="dark"] {
+  --bg:        #111;
+  --surface:   #1c1c1e;
+  --surface-2: #242426;
+  --border:    #2c2c2e;
+  --border-2:  #3a3a3c;
+  --text:      #f5f5f5;
+  --text-2:    #a0a0a0;
+  --muted:     #666;
+  --indigo-soft: #1a1a3e;
+  --indigo-mid:  #3030a0;
+  --xhs-soft:  #2d0a0e;
+  --red-soft:  #1f0a0a;
+  --green-soft:#022c22;
+  --amber-soft:#1a1200;
+  --blue-soft: #0a1628;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.4);
+  --shadow-md: 0 6px 20px rgba(0,0,0,.5);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,.6);
 }
 
 /* ── Reset ───────────────────────────────────── */
@@ -2036,4 +2061,26 @@ footer {
   line-height: 1.7;
   color: var(--text-2);
   margin-bottom: 12px;
+}
+
+/* ══════════════════════════════════════════════
+   响应式:窄屏 / 移动端
+══════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .top-inner { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 8px; }
+  .search-wrap { order: 3; flex: 1 1 100%; }
+  .brand-sub { display: none; }
+  .build-btn { padding: 0 12px; font-size: 12px; }
+  .feed-grid { columns: 1; padding: 12px; }
+  .ts-grid { grid-template-columns: 1fr !important; }
+  .scope-row { grid-template-columns: 1fr; }
+  /* 抽屉在窄屏占满宽度 */
+  .drawer-panel { width: 100% !important; max-width: 100% !important; }
+  .qd-panel { width: 100% !important; max-width: 100% !important; }
+  /* 主标签栏可横向滚动，不换行挤压 */
+  .main-tabs, .tab-row { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+@media (max-width: 400px) {
+  .build-btn { padding: 0 10px; }
+  .role-bar-label, .filter-bar-label { display: none; }
 }
