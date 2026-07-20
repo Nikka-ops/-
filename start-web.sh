@@ -27,13 +27,18 @@ port_free() {
 
 PORT="$REQUESTED_PORT"
 if ! port_free "$PORT"; then
-  echo "Port ${PORT} is in use."
+  # An old InterviewRadar on this port → stop it so we always run the latest code.
   if curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
-    echo "InterviewRadar may already be running → http://127.0.0.1:${PORT}/"
-    echo "To stop it: kill \$(lsof -ti :${PORT})"
-    echo "Or start on another port: bash start-web.sh 8767"
-    exit 0
+    echo "Stopping old server on port ${PORT} to launch the latest build …"
+    kill $(lsof -ti :"${PORT}") >/dev/null 2>&1 || true
+    for _ in $(seq 1 10); do
+      port_free "$PORT" && break
+      sleep 0.3
+    done
   fi
+fi
+if ! port_free "$PORT"; then
+  echo "Port ${PORT} is in use by another program."
   for p in $(seq "$REQUESTED_PORT" $((REQUESTED_PORT + 20))); do
     if port_free "$p"; then
       PORT="$p"
