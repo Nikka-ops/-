@@ -2084,3 +2084,37 @@ footer {
   .build-btn { padding: 0 10px; }
   .role-bar-label, .filter-bar-label { display: none; }
 }
+
+/* ══════════════════════════════════════════════
+   抓取/构建进度条
+══════════════════════════════════════════════ */
+.scrape-progress {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.scrape-progress-track {
+  height: 6px; border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.scrape-progress-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--indigo), var(--indigo-dark));
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+/* 无确定进度(pct=0 但进行中)时的流动动画 */
+.scrape-progress-fill.indeterminate {
+  width: 30% !important;
+  animation: scrape-slide 1.1s ease-in-out infinite;
+}
+@keyframes scrape-slide {
+  0% { margin-left: -30%; } 100% { margin-left: 100%; }
+}
+.scrape-progress-text {
+  font-size: 12px; color: var(--text-2); font-weight: 600;
+}

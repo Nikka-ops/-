@@ -1,5 +1,41 @@
 const $ = (id) => document.getElementById(id);
 
+// ── 抓取/构建进度轮询 ─────────────────────────────
+let _progressTimer = null;
+function _updateProgressUI(p) {
+  const el = document.getElementById("scrapeProgress");
+  const fill = document.getElementById("scrapeProgressFill");
+  const txt = document.getElementById("scrapeProgressText");
+  if (!el) return;
+  el.hidden = false;
+  if (txt) txt.textContent = p.message || "处理中…";
+  if (fill) {
+    if (p.pct > 0) {
+      fill.classList.remove("indeterminate");
+      fill.style.width = p.pct + "%";
+    } else {
+      fill.classList.add("indeterminate");   // 无确定进度 → 流动动画
+    }
+  }
+}
+async function startProgressPolling() {
+  stopProgressPolling();
+  const poll = async () => {
+    try {
+      const p = await getJson("/api/scrape/progress");
+      _updateProgressUI(p);
+      if (!p.active && p.phase !== "scraping" && p.phase !== "building") stopProgressPolling();
+    } catch { /* ignore transient */ }
+  };
+  await poll();
+  _progressTimer = setInterval(poll, 1500);
+}
+function stopProgressPolling() {
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+  const el = document.getElementById("scrapeProgress");
+  if (el) el.hidden = true;
+}
+
 // ── 主题(深/浅)──────────────────────────────────
 function applyTheme(theme) {
   // theme: 'dark' | 'light' | null(跟随系统)
@@ -1366,6 +1402,7 @@ async function runXhsIncremental() {
   if (!btn) return;
   btn.disabled = true;
   setLoading(true, "抓取 + 分类入库…");
+  startProgressPolling();
   try {
     const body = {
       ...payloadBase(),
@@ -1407,6 +1444,7 @@ async function runXhsIncremental() {
   } finally {
     btn.disabled = false;
     setLoading(false);
+    stopProgressPolling();
     await loadXhsStatus();
   }
 }

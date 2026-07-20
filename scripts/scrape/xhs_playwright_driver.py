@@ -129,7 +129,13 @@ class PlaywrightXHSDriver:
                 context = browser.contexts[0] if browser.contexts else browser.new_context()
                 page = context.new_page()
                 try:
+                    from scripts.scrape.scrape_progress import set_progress
                     for i, keyword in enumerate(cleaned):
+                        set_progress(
+                            "scraping",
+                            f"抓取小红书：{keyword}（第 {i + 1}/{len(cleaned)} 词，已得 {len(merged)} 篇）",
+                            current=i + 1, total=len(cleaned),
+                        )
                         if i and pause_seconds > 0:
                             # Human-like jitter: never a fixed cadence. A real user
                             # doesn't search on a metronome — randomising the gap is
