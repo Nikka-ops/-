@@ -128,7 +128,27 @@
           <input id="role" type="text" value="数据开发" placeholder="输入其他岗位…" />
         </label>
       </div>
-      <details class="advanced" open>
+      <div class="field-group scope-group">
+        <span class="field-label">抓取范围</span>
+        <div class="scope-row">
+          <label>时间范围
+            <select id="recencyWindow">
+              <option value="7">近一周</option>
+              <option value="30">近一月</option>
+              <option value="90" selected>近三月</option>
+              <option value="180">近半年</option>
+            </select>
+          </label>
+          <label>公司范围
+            <select id="companyScope">
+              <option value="all" selected>全部大厂</option>
+              <option value="custom">指定公司</option>
+            </select>
+          </label>
+        </div>
+        <label id="companiesRow" hidden>意向公司（逗号分隔）<input id="companies" type="text" placeholder="字节跳动, 美团" /></label>
+      </div>
+      <details class="advanced">
         <summary>AI 配置</summary>
         <p id="aiConfigStatus" class="status">读取配置中…</p>
         <p class="hint">保存到项目 `.env`，当前页面即可生效。</p>
@@ -164,21 +184,6 @@
         <label class="check"><input id="clearBossCookie" type="checkbox" /> 清空已保存的 Boss Cookie</label>
         <button id="saveSourceSettings" type="button" class="ghost block">保存平台凭证</button>
       </details>
-      <label>抓取时间范围
-        <select id="recencyWindow">
-          <option value="7">近一周</option>
-          <option value="30">近一月</option>
-          <option value="90" selected>近三月</option>
-          <option value="180">近半年</option>
-        </select>
-      </label>
-      <label>公司范围
-        <select id="companyScope">
-          <option value="all" selected>全部大厂</option>
-          <option value="custom">指定公司</option>
-        </select>
-      </label>
-      <label id="companiesRow" hidden>意向公司（逗号分隔）<input id="companies" type="text" placeholder="字节跳动, 美团" /></label>
       <label>简历摘要（可选，用于生成追问链）<textarea id="resumeText" rows="4" placeholder="粘贴简历中与目标岗位最相关的项目/技能描述（200字内）…" style="width:100%;box-sizing:border-box;margin-top:4px;font-size:.9em;resize:vertical"></textarea></label>
       <details class="advanced" id="advancedTools">
         <summary>联网抓取与岗位 JD</summary>

@@ -1065,6 +1065,24 @@ button.secondary {
   text-transform: uppercase; letter-spacing: .04em;
 }
 
+/* 抓取范围：显眼区块，两列并排 */
+.scope-group {
+  background: var(--bg-2, #f7f7f8);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.scope-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.scope-row label, #companiesRow {
+  font-size: 12px; color: var(--text-2); font-weight: 600;
+}
+.scope-row select, #companiesRow input {
+  width: 100%; box-sizing: border-box; margin-top: 4px;
+}
+#companiesRow { margin-top: 10px; display: block; }
+
 .role-grid {
   display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
 }
