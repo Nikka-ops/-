@@ -241,6 +241,23 @@ def extract_company_role(
     return company or None, role or None
 
 
+# 每个岗位系统化的考察方向 / 技术栈,用于牛客+小红书查询扩展(补 preset.keywords 之外的常考方向)
+_ROLE_EXTRA_DIRECTIONS: dict[str, tuple[str, ...]] = {
+    "data": (
+        "数开", "数仓工程师", "数据开发工程师", "大数据开发工程师",
+        "离线数仓", "实时数仓", "Flink开发", "Spark开发",
+        "数仓建模", "维度建模", "数据治理", "数据质量", "SQL优化",
+        "Kafka", "OLAP", "ClickHouse", "Doris", "数据湖", "数据中台",
+    ),
+    "ai_app": (
+        "LLM应用", "大模型应用", "AI应用开发工程师", "大模型应用开发",
+        "Prompt工程", "提示词工程", "向量数据库", "Embedding", "RAG系统",
+        "LangGraph", "function calling", "多轮对话", "知识库问答",
+        "AI工程师", "大模型微调", "多模态", "Agent编排",
+    ),
+}
+
+
 def classify_search_queries(
     *,
     roles: list[str],
@@ -273,19 +290,9 @@ def classify_search_queries(
                 add(f"{kw} 面经")
                 add(f"{preset.search_as} {kw}")
                 add(kw)
-            if preset.id == "data":
-                for extra in (
-                    "数开",
-                    "数仓工程师",
-                    "数据开发工程师",
-                    "大数据开发工程师",
-                    "离线数仓",
-                    "实时数仓",
-                    "Flink开发",
-                    "Spark开发",
-                ):
-                    add(f"{extra} 面经")
-                    add(f"{extra} 面试")
+            for extra in _ROLE_EXTRA_DIRECTIONS.get(preset.id, ()):  # 系统化技术方向覆盖
+                add(f"{extra} 面经")
+                add(f"{extra} 面试")
         for company in companies:
             add(f"{company} {role} 面经")
             add(f"{company} {role} 实习 面经")
