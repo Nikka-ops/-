@@ -183,11 +183,12 @@ def enrich_post_with_image_ocr(
     pages = ocr_image_paths(key, paths, ocr_root=ocr_root)
     merged = PageMerger().merge([p.text for p in pages])
     vision_used = False
-    if not merged.strip() or any(p.needs_vision for p in pages):
-        # OCR failed or is low-confidence — try a vision-language model
-        # (requires VISION_API_KEY; returns "" when not configured).
+    if _ocr_is_low_value(merged, pages):
+        # OCR failed, garbled, or suspiciously sparse for image pages — try a
+        # vision-language model (requires VISION_API_KEY; returns "" if unset).
         vl_text = _vision_read_pages(paths)
-        if vl_text.strip():
+        # Only adopt VL output if it's clearly richer than what OCR produced.
+        if vl_text.strip() and len(vl_text.strip()) > len(merged.strip()):
             merged = vl_text
             vision_used = True
     if not merged.strip():
@@ -211,6 +212,29 @@ def enrich_post_with_image_ocr(
     else:
         post.extraction_quality = "ocr_low_quality" if post.needs_vision_fallback else "ocr_ok"
     return post
+
+
+def _ocr_is_low_value(merged: str, pages: list) -> bool:
+    """Decide whether OCR output is poor enough to warrant a vision-model retry.
+    Triggers on: empty / any low-confidence page / garbled / suspiciously sparse
+    text for the number of image pages (a dense 面经 image yielding a few chars
+    almost always means OCR failed)."""
+    text = (merged or "").strip()
+    if not text:
+        return True
+    if any(getattr(p, "needs_vision", False) for p in pages):
+        return True
+    # garbled: replacement chars / control chars dominate
+    compact = "".join(ch for ch in text if not ch.isspace())
+    if compact:
+        bad = sum(1 for ch in compact if ch == "�" or ord(ch) < 32)
+        if bad / len(compact) > 0.2:
+            return True
+    # sparse: fewer than ~15 chars per image page → likely a failed dense read
+    n_pages = max(1, len(pages))
+    if len(compact) < 15 * n_pages:
+        return True
+    return False
 
 
 def _vision_read_pages(paths: list[Path]) -> str:
