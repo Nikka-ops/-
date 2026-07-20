@@ -165,6 +165,14 @@ def _local_assets_for_post_url(url: str) -> list[str]:
     return []
 
 
+def _image_ref_to_str(raw) -> str:
+    """An image ref may be a URL string or a rich dict {src,alt,width,height}
+    (from HTML img parsing). Pull the URL out; never str() a dict into a path."""
+    if isinstance(raw, dict):
+        raw = raw.get("src") or raw.get("url") or raw.get("path") or ""
+    return str(raw or "").strip()
+
+
 def collect_image_urls(post_dict: dict) -> list[str]:
     urls: list[str] = []
     seen: set[str] = set()
@@ -188,7 +196,7 @@ def collect_image_urls(post_dict: dict) -> list[str]:
             return urls
 
     for raw in post_dict.get("asset_paths") or []:
-        u = str(raw).strip()
+        u = _image_ref_to_str(raw)
         if not u:
             continue
         if _HTTP_URL.match(u):
@@ -196,7 +204,7 @@ def collect_image_urls(post_dict: dict) -> list[str]:
         else:
             _add(_resolve_local_asset_path(u) or u)
     for raw in post_dict.get("image_urls") or []:
-        u = str(raw).strip()
+        u = _image_ref_to_str(raw)
         if _HTTP_URL.match(u):
             _add(u)
     if not urls and post_url:
@@ -214,14 +222,19 @@ def _resolve_local_asset_path(path_str: str) -> str | None:
     raw = (path_str or "").strip()
     if not raw or _HTTP_URL.match(raw):
         return None
+    # A malformed ref (e.g. a stringified dict, or a URL-like value) can make
+    # Windows raise OSError/WinError when probed as a path — never let that crash.
     candidates: list[Path] = []
-    p = Path(raw).expanduser()
-    if p.is_file():
-        candidates.append(p.resolve())
-    for base in (Path.cwd(), package_root()):
-        candidate = (base / raw).resolve()
-        if candidate.is_file():
-            candidates.append(candidate)
+    try:
+        p = Path(raw).expanduser()
+        if p.is_file():
+            candidates.append(p.resolve())
+        for base in (Path.cwd(), package_root()):
+            candidate = (base / raw).resolve()
+            if candidate.is_file():
+                candidates.append(candidate)
+    except OSError:
+        return None
     for resolved in candidates:
         for root in (Path.cwd().resolve(), package_root().resolve()):
             assets_root = (root / "corpus_cache" / "assets").resolve()

@@ -60,12 +60,23 @@ function parseCompanies(raw) {
   return raw.split(/[,，、\n]/).map((s) => s.trim()).filter(Boolean);
 }
 
+function selectedRecencyDays() {
+  return Number($("recencyWindow")?.value) || RECENCY_WINDOW_DAYS;
+}
+
+function selectedCompanies() {
+  // 全部大厂 → 空列表(不限定公司,最广);指定公司 → 用户输入
+  const scope = $("companyScope")?.value || "all";
+  return scope === "custom" ? parseCompanies($("companies").value) : [];
+}
+
 function payloadBase() {
   const custom = $("role").value.trim();
   const body = {
     role_id: selectedRoleId,
     role: custom,
-    companies: parseCompanies($("companies").value),
+    companies: selectedCompanies(),
+    recency_window_days: selectedRecencyDays(),
     refresh: $("refresh").checked,
     rebuild_only: $("rebuildOnly").checked,
     discover_nowcoder: $("discoverNowcoder").checked,
@@ -1292,7 +1303,7 @@ async function runXhsScrapeSafe() {
   try {
     const data = await postJson("/api/xhs/scrape-safe", {
       role_id: selectedRoleId,
-      companies: parseCompanies($("companies").value),
+      companies: selectedCompanies(),
       core_only: $("xhsCoreOnly")?.checked ?? true,
       batch_size: 2,
       pause_seconds: 25,
@@ -1912,6 +1923,11 @@ function downloadBlob(filename, content, type) {
 $("submitBank").addEventListener("click", runBuildBank);
 $("submitXhsScrape")?.addEventListener("click", runXhsScrapeSafe);
 $("submitXhsIncremental")?.addEventListener("click", runXhsIncremental);
+// 公司范围:选「指定公司」才显示输入框
+$("companyScope")?.addEventListener("change", (e) => {
+  const row = $("companiesRow");
+  if (row) row.hidden = e.target.value !== "custom";
+});
 $("submitJobs").addEventListener("click", runFetchJobs);
 if ($("fetchJobsInline")) $("fetchJobsInline").addEventListener("click", runFetchJobs);
 if ($("heroLoadDemo")) $("heroLoadDemo").addEventListener("click", () => buildDemoBank(false));
