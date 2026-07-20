@@ -1535,8 +1535,41 @@ function closeQuestionDrawer() {
   _qdCurrentQ = null;
 }
 
+// 轻量 markdown 渲染(先转义 HTML,再套格式;代码块/行内码/加粗/列表)
+function renderAnswerMarkdown(text) {
+  const raw = String(text || "");
+  // 先抽出代码块占位,避免内部内容被后续规则破坏
+  const blocks = [];
+  let s = raw.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const i = blocks.length;
+    blocks.push(`<pre class="qd-code"><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`);
+    return ` B${i} `;
+  });
+  s = escapeHtml(s);
+  s = s.replace(/`([^`]+)`/g, (_, c) => `<code class="qd-inline-code">${c}</code>`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // 行级:列表 vs 段落
+  const lines = s.split("\n");
+  const out = [];
+  let inList = false;
+  for (const ln of lines) {
+    const t = ln.trim();
+    if (/^([-•*]|\d+[.、)])\s+/.test(t)) {
+      if (!inList) { out.push("<ul class='qd-list'>"); inList = true; }
+      out.push(`<li>${t.replace(/^([-•*]|\d+[.、)])\s+/, "")}</li>`);
+    } else {
+      if (inList) { out.push("</ul>"); inList = false; }
+      if (t) out.push(`<p>${t}</p>`);
+    }
+  }
+  if (inList) out.push("</ul>");
+  let html = out.join("");
+  html = html.replace(/ B(\d+) /g, (_, i) => blocks[Number(i)] || "");
+  return html;
+}
+
 function _qdShowAnswer(data) {
-  $("qdAnswer").textContent  = data.answer || "";
+  $("qdAnswer").innerHTML     = renderAnswerMarkdown(data.answer || "");
   $("qdKeyPoints").innerHTML = (data.key_points || [])
     .map((k) => `<span class="qd-keypoint-chip">${escapeHtml(k)}</span>`)
     .join("");

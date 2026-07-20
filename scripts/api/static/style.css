@@ -1017,6 +1017,34 @@ button.secondary {
   line-height: 1.85;
   color: var(--text);
 }
+.qd-answer-text p { margin: 0 0 8px; }
+.qd-answer-text p:last-child { margin-bottom: 0; }
+.qd-list { margin: 4px 0 10px; padding-left: 20px; }
+.qd-list li { margin: 3px 0; line-height: 1.7; }
+.qd-inline-code {
+  font-family: 'SF Mono', Consolas, Menlo, monospace;
+  font-size: 12.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--indigo-dark);
+}
+.qd-code {
+  margin: 8px 0;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.qd-code code {
+  font-family: 'SF Mono', Consolas, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre;
+}
 .qd-keypoints {
   display: flex;
   flex-wrap: wrap;
