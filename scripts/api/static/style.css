@@ -239,6 +239,32 @@ body {
   justify-content: center;
   transition: border-color var(--transition), color var(--transition), background var(--transition);
 }
+
+/* 主入口：构建题库 — 醒目填充按钮 */
+.build-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--text, #111);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+  transition: transform var(--transition), box-shadow var(--transition), opacity var(--transition);
+}
+.build-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .24);
+}
+.build-btn:active { transform: translateY(0); }
+.build-btn-icon { font-size: 15px; line-height: 1; }
 .icon-btn:hover {
   border-color: var(--indigo);
   color: var(--indigo);
