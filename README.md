@@ -28,7 +28,7 @@
 | 目标岗位 + 公司 | 近 90 天时效过滤 · 公司标签归一化 · 语义去重合并 | 高频题 + AI 参考答案 |
 | Boss 直聘 / 大厂官网 JD | 浏览器监听绕过风控 · 增量去重 | 在招岗位 + 技术栈 & 薪资分析 |
 
-> 💡 **零配置也能看**：没有 API Key 时以基础模式启动，内置 Demo 题库直接可浏览；配上 Key 再解锁 AI 过滤、解答、语义搜索等增强能力。
+> 💡 **零配置能启动**：没有 API Key 时以基础模式启动，可用内置样例一键体验界面与流程；配上 Key + 抓取自己的面经后，解锁 AI 过滤、解答、语义搜索等完整能力。
 
 ---
 
@@ -46,7 +46,7 @@
 
 ```bash
 # 1) 克隆 & 安装（自动校验 Python ≥ 3.11 并建虚拟环境）
-git clone https://github.com/Nikka-ops/-.git interview-radar && cd interview-radar
+git clone https://github.com/Nikka-ops/interview-radar.git interview-radar && cd interview-radar
 bash install.sh
 
 # 2) 启动 Web UI
